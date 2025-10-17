@@ -1,13 +1,19 @@
-/* Resibo App v3.1.5 - app.js */
+/* Resibo App v3.1.6 - app.js
+   Changes in 3.1.6:
+   - Accept PH TIN with 9 or 12 digits (e.g., 123-456-789 or 123-456-789-000)
+   - CSV header parsing is case-insensitive (lowercased internally)
+   - Verification uses normalized headers: code, name, tin, gmail, status, expiry_date
+*/
 
 (() => {
   'use strict';
 
   // ---------- Version & Globals ----------
-  const VERSION = '3.1.5';
-  const CACHE_VERSION = 'resibo-cache-v3.1.5';
+  const VERSION = '3.1.6';
+  const CACHE_VERSION = 'resibo-cache-v3.1.6';
   const BUILD_TIME = new Date().toISOString();
-  const SCHEMA_VERSION = '3.1.4'; // schema unchanged from 3.1.4 (role + transaction_type)
+  // Schema unchanged from previous: includes role + transaction_type
+  const SCHEMA_VERSION = '3.1.4';
   const SESSION_TTL_DAYS = 7;
   const OCR_CONF_THRESHOLD = 0.8;
   const TIMEZONE = 'Asia/Manila';
@@ -91,28 +97,54 @@
     const da = parts.find(p=>p.type==='day').value;
     return new Date(`${y}-${m}-${da}T00:00:00Z`);
   };
-  const ymd = (s) => {
-    const m = String(s || '').trim().match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
-    return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
-  };
+
+  // Parse various common YMD/MDY/DMY formats to YYYY-MM-DD (or null)
+  function parseToYMD(s) {
+    const t = String(s || '').trim();
+    if (!t) return null;
+    // 2025-10-31 or 2025/10/31
+    let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (m) return `${m[1].padStart(4,'0')}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+    // 10/31/2025 or 10-31-2025 (MDY)
+    m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (m) return `${m[3].padStart(4,'0')}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+    return null;
+  }
+
   const withinGrace = (expiryYMD, tz=TIMEZONE) => {
     const today = nowInTZ(tz);
     const exp = new Date(`${expiryYMD}T00:00:00Z`);
     const day = 86400000;
     return (exp.getTime() + day) >= (today.getTime() - day);
   };
+
   const guardCsvInjection = (str) => {
     const s = String(str ?? '');
     return (/^[=\-+@]/.test(s)) ? `'${s}` : s.replace(/[\r\n]+/g, ' ');
   };
+
   const sanitizePIILog = (msg) => String(msg).replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig, '[email]')
-                                            .replace(/\b\d{3}[- ]?\d{3}[- ]?\d{3}\b/g, '[tin]');
+                                            .replace(/\b\d{3}[- ]?\d{3}[- ]?\d{3}(?:[- ]?\d{3})?\b/g, '[tin]');
   const toast = (msg, cls='ok') => {
     els.exportMsg.textContent = msg;
     els.exportMsg.className = `msg ${cls}`;
     setTimeout(()=> { els.exportMsg.textContent=''; els.exportMsg.className='msg'; }, 4000);
   };
-  const normalizeTIN = (tin) => String(tin || '').replace(/[^\d]/g,'');
+
+  // TIN helpers (accept 9 or 12 digits, ignore separators)
+  const digitsOnly = (s) => String(s || '').replace(/\D+/g, '');
+  function isTinEqual(a, b) {
+    const A = digitsOnly(a);
+    const B = digitsOnly(b);
+    if (!A || !B) return false;
+    // Equal full strings
+    if (A === B) return true;
+    // If one is 12 digits and the other is 9, compare first 9
+    if ((A.length === 12 && B.length === 9) || (A.length === 9 && B.length === 12)) {
+      return A.slice(0,9) === B.slice(0,9);
+    }
+    return false;
+  }
   const normalizeName = (s) => String(s||'').trim().toUpperCase().replace(/\s+/g,' ');
 
   // ---------- Connectivity ----------
@@ -124,7 +156,7 @@
   // ---------- Service Worker Registration ----------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=3.1.5')
+      navigator.serviceWorker.register('./sw.js?v=3.1.6')
         .then(reg => {
           if (reg.waiting) { els.btnUpdate.hidden = false; }
           reg.addEventListener('updatefound', () => {
@@ -145,12 +177,10 @@
     });
   }
 
-  // ---------- SETTINGS (NEW) ----------
-  // Load saved settings into inputs
+  // ---------- SETTINGS ----------
   (function hydrateSettings() {
     els.setCsvUrl.value = localStorage.getItem(LS.csvUrl) || '';
     els.setEmailUrl.value = localStorage.getItem(LS.emailEndpoint) || '';
-    // Also prefill Step 1 input if empty
     if (!els.inpCsvUrl.value && els.setCsvUrl.value) {
       els.inpCsvUrl.value = els.setCsvUrl.value;
     }
@@ -163,7 +193,6 @@
     if (eml) localStorage.setItem(LS.emailEndpoint, eml); else localStorage.removeItem(LS.emailEndpoint);
     els.settingsMsg.textContent = 'Settings saved.';
     els.settingsMsg.className = 'msg ok';
-    // reflect into Step 1
     if (csv) els.inpCsvUrl.value = csv;
     setTimeout(()=>{ els.settingsMsg.textContent=''; els.settingsMsg.className='msg'; }, 3000);
   });
@@ -187,8 +216,11 @@
       const res = await fetch(url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      els.settingsMsg.textContent = text.slice(0, 100).includes('NAME') ? 'CSV looks OK.' : 'CSV fetched. Check headers row.';
-      els.settingsMsg.className = 'msg ok';
+      // quick header sanity check
+      const firstLine = (text.split(/\r?\n/).find(Boolean) || '').toLowerCase();
+      const ok = ['code','name','tin','gmail','status','expiry_date'].every(h => firstLine.includes(h));
+      els.settingsMsg.textContent = ok ? 'CSV looks OK (headers detected).' : 'CSV fetched. Check headers row.';
+      els.settingsMsg.className = ok ? 'msg ok' : 'msg';
     } catch (e) {
       els.settingsMsg.textContent = 'CSV test failed: ' + (e.message || e);
       els.settingsMsg.className = 'msg error';
@@ -199,15 +231,40 @@
     const url = (els.setEmailUrl.value || '').trim();
     if (!url) { els.settingsMsg.textContent = 'Enter an Email Endpoint first.'; els.settingsMsg.className='msg error'; return; }
     try {
-      // Lightweight OPTIONS/GET probe via fetch (won’t send data)
-      const res = await fetch(url, { method: 'GET', mode: 'no-cors' });
-      els.settingsMsg.textContent = 'Endpoint is reachable (or CORS-silent). Try a real export to be sure.';
+      await fetch(url, { method: 'GET', mode: 'no-cors' });
+      els.settingsMsg.textContent = 'Endpoint reachable (CORS may hide details). Try a real export to be sure.';
       els.settingsMsg.className = 'msg ok';
     } catch (e) {
       els.settingsMsg.textContent = 'Endpoint check failed: ' + (e.message || e);
       els.settingsMsg.className = 'msg error';
     }
   });
+
+  // ---------- CSV Parser (lowercase headers) ----------
+  function parseCsv(text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return [];
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    return lines.slice(1).map(line => {
+      const cells = [];
+      let field = '', inQ = false;
+      for (let i=0; i<line.length; i++) {
+        const c = line[i];
+        if (c === '"' ) {
+          if (inQ && line[i+1] === '"') { field += '"'; i++; }
+          else { inQ = !inQ; }
+        } else if (c === ',' && !inQ) {
+          cells.push(field); field = '';
+        } else {
+          field += c;
+        }
+      }
+      cells.push(field);
+      const obj = {};
+      headers.forEach((h, idx) => obj[h] = (cells[idx] ?? '').trim());
+      return obj;
+    });
+  }
 
   // ---------- Verification ----------
   els.verifyForm.addEventListener('submit', async (e) => {
@@ -251,25 +308,38 @@
     }
 
     const rows = parseCsv(csvText);
+
+    // Find a matching record case-insensitively by name/gmail and TIN(9|12) + code
+    const nameNorm = normalizeName(name);
+    const tinInput = tin;
+
     const rec = rows.find(r =>
-      (r.ACCESS_CODE || '').trim() === access_code &&
-      (r.NAME || '').trim().toLowerCase() === name.toLowerCase() &&
-      (r.TIN || '').replace(/\s+/g,'') === tin.replace(/\s+/g,'') &&
-      (r.GMAIL || '').trim().toLowerCase() === gmail
+      String(r.code || '').trim() === access_code &&
+      normalizeName(r.name || '') === nameNorm &&
+      isTinEqual(r.tin || '', tinInput) &&
+      String(r.gmail || '').trim().toLowerCase() === gmail
     );
 
     if (!rec) { els.verifyMsg.textContent = 'No matching ACTIVE record found. Check your inputs.'; els.verifyMsg.className = 'msg error'; return; }
-    if ((rec.STATUS || '').toUpperCase() !== 'ACTIVE') { els.verifyMsg.textContent = 'Record found but STATUS is not ACTIVE.'; els.verifyMsg.className = 'msg error'; return; }
-    const exp = ymd(rec.EXPIRY_DATE);
-    if (!exp || !withinGrace(exp)) { els.verifyMsg.textContent = 'No matching ACTIVE record with a valid EXPIRY_DATE.'; els.verifyMsg.className = 'msg error'; return; }
+    if (String(rec.status || '').toUpperCase() !== 'ACTIVE') { els.verifyMsg.textContent = 'Record found but STATUS is not ACTIVE.'; els.verifyMsg.className = 'msg error'; return; }
+
+    const expYMD = parseToYMD(rec.expiry_date);
+    if (!expYMD || !withinGrace(expYMD)) {
+      els.verifyMsg.textContent = 'Record found but EXPIRY_DATE is invalid or expired.';
+      els.verifyMsg.className = 'msg error'; return;
+    }
 
     const session = {
       schema: SCHEMA_VERSION,
       verifiedAt: new Date().toISOString(),
       expiresInDays: SESSION_TTL_DAYS,
-      access_code, name, tin, gmail,
-      name_norm: normalizeName(name),
-      tin_norm: normalizeTIN(tin)
+      access_code,
+      name,
+      tin,
+      gmail,
+      name_norm: nameNorm,
+      tin_norm9: digitsOnly(tin).slice(0,9),
+      tin_norm12: digitsOnly(tin).padEnd(12,'0').slice(0,12)
     };
     setLocal(LS.session, session);
     els.verifyMsg.textContent = 'Verification success. Session stored for 7 days.';
@@ -286,31 +356,6 @@
     els.verifyMsg.textContent = '';
     delLocal(LS.session);
   });
-
-  function parseCsv(text) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (!lines.length) return [];
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-      const cells = [];
-      let field = '', inQ = false;
-      for (let i=0; i<line.length; i++) {
-        const c = line[i];
-        if (c === '"' ) {
-          if (inQ && line[i+1] === '"') { field += '"'; i++; }
-          else { inQ = !inQ; }
-        } else if (c === ',' && !inQ) {
-          cells.push(field); field = '';
-        } else {
-          field += c;
-        }
-      }
-      cells.push(field);
-      const obj = {};
-      headers.forEach((h, idx) => obj[h.trim()] = (cells[idx] ?? '').trim());
-      return obj;
-    });
-  }
 
   // ---------- Camera ----------
   let camStream = null;
@@ -465,15 +510,15 @@
       const { text, avgConf } = await ocrCanvases(canvases);
       const parsed = parseFields(text);
 
-      // Role detection (from v3.1.4)
+      // Role detection
       const session = getLocal(LS.session, {});
-      const userTin = normalizeTIN(session.tin);
-      const userName = normalizeName(session.name);
-      const sellerTin = normalizeTIN(parsed.tin);
+      const userTin = session.tin || '';
+      const userName = normalizeName(session.name || '');
+      const sellerTin = parsed.tin || '';
       const sellerName = normalizeName(parsed.seller_name || '');
 
       const isUserSeller =
-        (userTin && sellerTin && userTin === sellerTin) ||
+        (userTin && sellerTin && isTinEqual(userTin, sellerTin)) ||
         (!!userName && !!sellerName && (sellerName.includes(userName) || userName.includes(sellerName)));
 
       const role = isUserSeller ? 'SELLER/ISSUER' : 'BUYER/PAYOR';
@@ -518,10 +563,12 @@
     ctx.drawImage(inputCanvas, 0, 0);
     const img = ctx.getImageData(0, 0, cnv.width, cnv.height);
     const d = img.data;
+    // grayscale
     for (let i=0; i<d.length; i+=4) {
       const g = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
       d[i]=d[i+1]=d[i+2]=g;
     }
+    // simple global threshold
     let sum=0; for (let i=0; i<d.length; i+=4) sum += d[i];
     const avg = sum / (d.length/4);
     for (let i=0; i<d.length; i+=4) {
@@ -566,15 +613,15 @@
     // Guess a business name near common words
     const nameGuess = (t.match(/\b([A-Z0-9 '&.-]{3,40})(?:\s+(?:STORE|TRADING|ENTERPRISES|COMPANY|INCORPORATED|INC|CORP|CORPORATION))\b/) || [])[1];
 
-    const tin = (t.match(/\b(\d{3}[- ]?\d{3}[- ]?\d{3})\b/) || [])[1] || '';
+    const tin = (t.match(/\b(\d{3}[- ]?\d{3}[- ]?\d{3}(?:[- ]?\d{3})?)\b/) || [])[1] || '';
     const date =
-      (t.match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.]([0-2]\d|3[01]))\b/) || [])[1] ||
-      (t.match(/\b(([0-2]\d|3[01])[/-](0[1-9]|1[0-2])[/-]20\d{2})\b/) || [])[1] ||
-      (t.match(/\b((0[1-9]|1[0-2])[/-]([0-2]\d|3[01])[/-]20\d{2})\b/) || [])[1] || '';
+      (t.match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.]([0-2]\d|3[01]))\b/) || [])[1] ||   // YYYY-MM-DD
+      (t.match(/\b(([0-2]\d|3[01])[/-](0[1-9]|1[0-2])[/-]20\d{2})\b/) || [])[1] ||   // DD/MM/YYYY
+      (t.match(/\b((0[1-9]|1[0-2])[/-]([0-2]\d|3[01])[/-]20\d{2})\b/) || [])[1] || ''; // MM/DD/YYYY
     const amt = (t.match(/\b([₱P]?\s?\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?)\b/) || [])[1] || '';
     const cleanedAmt = amt.replace(/[₱P\s,]/g,'');
 
-    return { tin, date, amount: cleanedAmt, seller_name: nameGuess || '' };
+    return { tin, date: parseToYMD(date) || '', amount: cleanedAmt, seller_name: nameGuess || '' };
   }
 
   function renderRecords() {
@@ -649,10 +696,10 @@
   }
   function validateRecord(rec) {
     const errs = [];
-    const tinOk = /^\d{3}[- ]?\d{3}[- ]?\d{3}$/.test(rec.seller.tin || '');
-    if (!tinOk) errs.push('Seller TIN format invalid (###-###-###).');
-    const d = ymd(rec.receipt_date || '');
-    if (!d) errs.push('Receipt date must be YYYY-MM-DD.');
+    const tinOk = /^\d{3}[- ]?\d{3}[- ]?\d{3}(?:[- ]?\d{3})?$/.test(rec.seller.tin || '');
+    if (!tinOk) errs.push('Seller TIN format invalid (###-###-### or ###-###-###-###).');
+    const d = parseToYMD(rec.receipt_date || '');
+    if (!d) errs.push('Receipt date must be YYYY-MM-DD (or a common date that converts to it).');
     const tot = Number(rec.monetary.total || 0);
     if (!(tot > 0)) errs.push('Total amount must be > 0.');
     if (!rec.transaction_type) errs.push('Select a Transaction Type.');
@@ -756,15 +803,15 @@
 
   // ---------- Self Test ----------
   const SELFTEST_ITEMS = [
-    { name: 'Service Worker present', path: './sw.js?v=3.1.5' },
-    { name: 'Manifest present', path: './manifest.json?v=3.1.5' },
+    { name: 'Service Worker present', path: './sw.js?v=3.1.6' },
+    { name: 'Manifest present', path: './manifest.json?v=3.1.6' },
     { name: 'Icons 192', path: './icons/icon-192.png' },
     { name: 'Icons 512', path: './icons/icon-512.png' },
     { name: 'JSZip present', path: './libs/jszip.min.js' },
     { name: 'FileSaver present', path: './libs/FileSaver.min.js' },
     { name: 'pdf.js present', path: './libs/pdf.min.js' },
     { name: 'Tesseract present', path: './libs/tesseract.min.js' },
-    { name: 'Cache version match', custom: async () => (('resibo-cache-v3.1.5' === CACHE_VERSION) ? 'ok' : 'fail') },
+    { name: 'Cache version match', custom: async () => ((CACHE_VERSION === 'resibo-cache-v3.1.6') ? 'ok' : 'fail') },
   ];
 
   $('btnRunSelfTest').addEventListener('click', async () => {
@@ -788,7 +835,6 @@
 
   // ---------- Restore ----------
   (function initFromStorage() {
-    // Prefill Step 1 CSV from Settings if present
     const savedCsv = localStorage.getItem(LS.csvUrl) || '';
     if (savedCsv) els.inpCsvUrl.value = savedCsv;
 
