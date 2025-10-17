@@ -1,8 +1,8 @@
 /* Resibo App v3.1.6 - app.js
-   Changes in 3.1.6:
-   - Accept PH TIN with 9 or 12 digits (e.g., 123-456-789 or 123-456-789-000)
-   - CSV header parsing is case-insensitive (lowercased internally)
-   - Verification uses normalized headers: code, name, tin, gmail, status, expiry_date
+   Changes in 3.1.6 (option 2 - tolerant name match):
+   - Name match is now forgiving: case-insensitive, space-insensitive, and allows partial token match.
+   - Still strict on: code (exact), gmail (lowercased equality), TIN (9- or 12-digit, separators ignored), STATUS=ACTIVE, expiry_date valid.
+   - CSV header parsing remains case-insensitive (lowercased internally).
 */
 
 (() => {
@@ -12,7 +12,6 @@
   const VERSION = '3.1.6';
   const CACHE_VERSION = 'resibo-cache-v3.1.6';
   const BUILD_TIME = new Date().toISOString();
-  // Schema unchanged from previous: includes role + transaction_type
   const SCHEMA_VERSION = '3.1.4';
   const SESSION_TTL_DAYS = 7;
   const OCR_CONF_THRESHOLD = 0.8;
@@ -98,14 +97,11 @@
     return new Date(`${y}-${m}-${da}T00:00:00Z`);
   };
 
-  // Parse various common YMD/MDY/DMY formats to YYYY-MM-DD (or null)
   function parseToYMD(s) {
     const t = String(s || '').trim();
     if (!t) return null;
-    // 2025-10-31 or 2025/10/31
     let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if (m) return `${m[1].padStart(4,'0')}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
-    // 10/31/2025 or 10-31-2025 (MDY)
     m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
     if (m) return `${m[3].padStart(4,'0')}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
     return null;
@@ -137,15 +133,28 @@
     const A = digitsOnly(a);
     const B = digitsOnly(b);
     if (!A || !B) return false;
-    // Equal full strings
     if (A === B) return true;
-    // If one is 12 digits and the other is 9, compare first 9
     if ((A.length === 12 && B.length === 9) || (A.length === 9 && B.length === 12)) {
       return A.slice(0,9) === B.slice(0,9);
     }
     return false;
   }
+
+  // Name normalization + tolerant match
   const normalizeName = (s) => String(s||'').trim().toUpperCase().replace(/\s+/g,' ');
+  function isNameMatch(inputName, recordName) {
+    const a = normalizeName(inputName);
+    const b = normalizeName(recordName);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    // token coverage: all tokens from the shorter must appear in the longer
+    const tokensA = a.split(' ').filter(t => t.length >= 2);
+    const tokensB = b.split(' ').filter(t => t.length >= 2);
+    const short = tokensA.length <= tokensB.length ? tokensA : tokensB;
+    const longStr = tokensA.length <= tokensB.length ? b : a;
+    const covered = short.filter(t => longStr.includes(t)).length;
+    return (covered / Math.max(short.length, 1)) >= 0.6; // 60% token overlap
+  }
 
   // ---------- Connectivity ----------
   function updateOnlineStatus() { els.offlineBanner.hidden = navigator.onLine; }
@@ -216,7 +225,6 @@
       const res = await fetch(url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      // quick header sanity check
       const firstLine = (text.split(/\r?\n/).find(Boolean) || '').toLowerCase();
       const ok = ['code','name','tin','gmail','status','expiry_date'].every(h => firstLine.includes(h));
       els.settingsMsg.textContent = ok ? 'CSV looks OK (headers detected).' : 'CSV fetched. Check headers row.';
@@ -282,7 +290,6 @@
       return;
     }
 
-    // Prefer pasted CSV, else form CSV URL, else saved Settings CSV URL
     let csvText = '';
     const savedCsv = localStorage.getItem(LS.csvUrl) || '';
     const chosenUrl = csvUrlInput || savedCsv;
@@ -308,14 +315,11 @@
     }
 
     const rows = parseCsv(csvText);
-
-    // Find a matching record case-insensitively by name/gmail and TIN(9|12) + code
-    const nameNorm = normalizeName(name);
     const tinInput = tin;
 
     const rec = rows.find(r =>
       String(r.code || '').trim() === access_code &&
-      normalizeName(r.name || '') === nameNorm &&
+      isNameMatch(name, r.name || '') &&
       isTinEqual(r.tin || '', tinInput) &&
       String(r.gmail || '').trim().toLowerCase() === gmail
     );
@@ -337,7 +341,7 @@
       name,
       tin,
       gmail,
-      name_norm: nameNorm,
+      name_norm: normalizeName(name),
       tin_norm9: digitsOnly(tin).slice(0,9),
       tin_norm12: digitsOnly(tin).padEnd(12,'0').slice(0,12)
     };
@@ -382,9 +386,8 @@
     const c = els.camCanvas; c.width = w; c.height = h;
     c.getContext('2d').drawImage(els.camPreview, 0, 0, w, h);
     const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
-    const dataURL = c.toDataURL('image/jpeg', 0.92);
     const id = `cam_${Date.now()}`;
-    state.files.push({ id, name: `${id}.jpg`, blob, dataURL, type: 'image/jpeg' });
+    state.files.push({ id, name: `${id}.jpg`, blob, dataURL: c.toDataURL('image/jpeg', 0.92), type: 'image/jpeg' });
     renderFileList();
   });
 
@@ -510,17 +513,15 @@
       const { text, avgConf } = await ocrCanvases(canvases);
       const parsed = parseFields(text);
 
-      // Role detection
+      // Role detection (user vs seller on receipt)
       const session = getLocal(LS.session, {});
       const userTin = session.tin || '';
       const userName = normalizeName(session.name || '');
       const sellerTin = parsed.tin || '';
       const sellerName = normalizeName(parsed.seller_name || '');
-
       const isUserSeller =
         (userTin && sellerTin && isTinEqual(userTin, sellerTin)) ||
         (!!userName && !!sellerName && (sellerName.includes(userName) || userName.includes(sellerName)));
-
       const role = isUserSeller ? 'SELLER/ISSUER' : 'BUYER/PAYOR';
       const suggestions = isUserSeller
         ? ['Sales (Cash)', 'Sales (Charge)', 'Collection from Customer']
@@ -563,12 +564,10 @@
     ctx.drawImage(inputCanvas, 0, 0);
     const img = ctx.getImageData(0, 0, cnv.width, cnv.height);
     const d = img.data;
-    // grayscale
     for (let i=0; i<d.length; i+=4) {
       const g = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
       d[i]=d[i+1]=d[i+2]=g;
     }
-    // simple global threshold
     let sum=0; for (let i=0; i<d.length; i+=4) sum += d[i];
     const avg = sum / (d.length/4);
     for (let i=0; i<d.length; i+=4) {
@@ -610,17 +609,14 @@
   function parseFields(text) {
     const raw = text || '';
     const t = raw.replace(/\s+/g,' ').toUpperCase();
-    // Guess a business name near common words
     const nameGuess = (t.match(/\b([A-Z0-9 '&.-]{3,40})(?:\s+(?:STORE|TRADING|ENTERPRISES|COMPANY|INCORPORATED|INC|CORP|CORPORATION))\b/) || [])[1];
-
     const tin = (t.match(/\b(\d{3}[- ]?\d{3}[- ]?\d{3}(?:[- ]?\d{3})?)\b/) || [])[1] || '';
     const date =
-      (t.match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.]([0-2]\d|3[01]))\b/) || [])[1] ||   // YYYY-MM-DD
-      (t.match(/\b(([0-2]\d|3[01])[/-](0[1-9]|1[0-2])[/-]20\d{2})\b/) || [])[1] ||   // DD/MM/YYYY
-      (t.match(/\b((0[1-9]|1[0-2])[/-]([0-2]\d|3[01])[/-]20\d{2})\b/) || [])[1] || ''; // MM/DD/YYYY
+      (t.match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.]([0-2]\d|3[01]))\b/) || [])[1] ||
+      (t.match(/\b(([0-2]\d|3[01])[/-](0[1-9]|1[0-2])[/-]20\d{2})\b/) || [])[1] ||
+      (t.match(/\b((0[1-9]|1[0-2])[/-]([0-2]\d|3[01])[/-]20\d{2})\b/) || [])[1] || '';
     const amt = (t.match(/\b([₱P]?\s?\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?)\b/) || [])[1] || '';
     const cleanedAmt = amt.replace(/[₱P\s,]/g,'');
-
     return { tin, date: parseToYMD(date) || '', amount: cleanedAmt, seller_name: nameGuess || '' };
   }
 
