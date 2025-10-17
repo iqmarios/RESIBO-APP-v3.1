@@ -2,27 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Resibo App v3.1.4</title>
+  <title>Resibo App v3.1.5</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="theme-color" content="#111827" />
   <meta name="description" content="Offline-capable PWA for receipt recording & reporting with privacy-first local OCR." />
 
   <!-- PWA manifest -->
-  <link rel="manifest" href="./manifest.json?v=3.1.4" />
+  <link rel="manifest" href="./manifest.json?v=3.1.5" />
 
   <!-- Icons -->
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./icons/icon-512.png" />
 
   <!-- Styles -->
-  <link rel="stylesheet" href="./style.css?v=3.1.4" />
+  <link rel="stylesheet" href="./style.css?v=3.1.5" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Resibo App <span class="muted">v3.1.4</span></h1>
+    <h1>Resibo App <span class="muted">v3.1.5</span></h1>
     <nav class="top-actions">
       <a href="#debug" class="btn btn-ghost" id="btnOpenDebug" aria-label="Open self-test panel">Self-Test</a>
+      <a href="#settings" class="btn btn-ghost" aria-label="Open settings">Settings</a>
       <button id="btnUpdate" class="btn btn-ghost" hidden>Update Ready</button>
     </nav>
   </header>
@@ -32,6 +33,27 @@
   </aside>
 
   <main class="container">
+    <!-- SETTINGS (NEW) -->
+    <section class="card" id="settings" aria-labelledby="h-settings">
+      <h2 id="h-settings">Settings</h2>
+      <div class="grid grid-2">
+        <label>Issued Codes CSV URL (HTTPS)
+          <input id="setCsvUrl" placeholder="https://docs.google.com/spreadsheets/.../pub?output=csv" />
+        </label>
+        <label>Email Export Endpoint (Apps Script URL)
+          <input id="setEmailUrl" placeholder="https://script.google.com/macros/s/.../exec" />
+        </label>
+      </div>
+      <div class="flex">
+        <button class="btn" id="btnSaveSettings" type="button">Save</button>
+        <button class="btn btn-ghost" id="btnTestCsv" type="button">Test CSV</button>
+        <button class="btn btn-ghost" id="btnTestEmail" type="button">Test Email Endpoint</button>
+        <button class="btn btn-ghost" id="btnClearSettings" type="button">Clear Settings</button>
+      </div>
+      <p id="settingsMsg" class="msg" aria-live="polite"></p>
+      <p class="note">Saved locally in your browser. The app auto-fills Step 1 using these values.</p>
+    </section>
+
     <!-- STEP 1: VERIFICATION -->
     <section class="card" id="sectionVerify" aria-labelledby="h-verify">
       <h2 id="h-verify">Step 1 — Verification & Access Control</h2>
@@ -58,7 +80,7 @@
               <input id="inpCsvUrl" name="csv_url" placeholder="https://docs.google.com/spreadsheets/.../pub?output=csv" />
             </label>
             <label>OR Paste CSV (headers: NAME,TIN,GMAIL,ACCESS_CODE,EXPIRY_DATE,STATUS)
-              <textarea id="inpCsvPaste" rows="4" placeholder="NAME,TIN,GMAIL,ACCESS_CODE,EXPIRY_DATE,STATUS&#10;Mario,123-456-789,name@gmail.com,RES-AAA,2025-12-31,ACTIVE"></textarea>
+              <textarea id="inpCsvPaste" rows="4" placeholder="NAME,TIN,GMAIL,ACCESS_CODE,EXPIRY_DATE,STATUS&#10;Mario,123-456-789,name@gmail.com,RES-AAA,2026-12-31,ACTIVE"></textarea>
             </label>
           </div>
         </details>
@@ -126,7 +148,7 @@
         <fieldset>
           <legend>Email Export (optional backend)</legend>
           <button class="btn" id="btnEmailExport" type="button">Email data.csv + manifest.json</button>
-          <p class="note">Requires Apps Script endpoint (see README). Queued if offline.</p>
+          <p class="note">Requires Apps Script endpoint (see Settings). Queued if offline.</p>
         </fieldset>
         <fieldset>
           <legend>ZIP Export (local)</legend>
@@ -172,13 +194,13 @@
   <!-- Version object -->
   <script>
     window.__RESIBO__ = {
-      VERSION: '3.1.4',
-      CACHE_VERSION: 'resibo-cache-v3.1.4',
+      VERSION: '3.1.5',
+      CACHE_VERSION: 'resibo-cache-v3.1.5',
       BUILD_TIME: new Date().toISOString()
     };
   </script>
 
   <!-- Main app -->
-  <script src="./app.js?v=3.1.4"></script>
+  <script src="./app.js?v=3.1.5"></script>
 </body>
 </html>

@@ -1,16 +1,24 @@
-/* Resibo App v3.1.4 - app.js */
+/* Resibo App v3.1.5 - app.js */
 
 (() => {
   'use strict';
 
   // ---------- Version & Globals ----------
-  const VERSION = '3.1.4';
-  const CACHE_VERSION = 'resibo-cache-v3.1.4';
+  const VERSION = '3.1.5';
+  const CACHE_VERSION = 'resibo-cache-v3.1.5';
   const BUILD_TIME = new Date().toISOString();
-  const SCHEMA_VERSION = '3.1.4';
+  const SCHEMA_VERSION = '3.1.4'; // schema unchanged from 3.1.4 (role + transaction_type)
   const SESSION_TTL_DAYS = 7;
   const OCR_CONF_THRESHOLD = 0.8;
   const TIMEZONE = 'Asia/Manila';
+
+  const LS = {
+    csvUrl: 'resibo.csvUrl',
+    emailEndpoint: 'resibo.emailEndpoint',
+    session: 'resibo.session',
+    receipts: 'resibo.receipts',
+    queue: 'resibo.queue'
+  };
 
   const $ = (id) => document.getElementById(id);
 
@@ -21,9 +29,24 @@
     sectionReview: $('sectionReview'),
     sectionExport: $('sectionExport'),
     sectionPrivacy: $('sectionPrivacy'),
+
+    // Settings
+    setCsvUrl: $('setCsvUrl'),
+    setEmailUrl: $('setEmailUrl'),
+    btnSaveSettings: $('btnSaveSettings'),
+    btnTestCsv: $('btnTestCsv'),
+    btnTestEmail: $('btnTestEmail'),
+    btnClearSettings: $('btnClearSettings'),
+    settingsMsg: $('settingsMsg'),
+
+    // Verify
     verifyForm: $('verifyForm'),
     verifyMsg: $('verifyMsg'),
     btnClearVerify: $('btnClearVerify'),
+    inpCsvUrl: $('inpCsvUrl'),
+    inpCsvPaste: $('inpCsvPaste'),
+
+    // Capture
     camPreview: $('camPreview'),
     camCanvas: $('camCanvas'),
     btnStartCam: $('btnStartCam'),
@@ -33,25 +56,28 @@
     btnProcess: $('btnProcess'),
     btnClearFiles: $('btnClearFiles'),
     fileList: $('fileList'),
+
+    // Review
     recordsPanel: $('recordsPanel'),
+
+    // Export
     inpConfirmAll: $('inpConfirmAll'),
     btnEmailExport: $('btnEmailExport'),
     btnZipExport: $('btnZipExport'),
     exportMsg: $('exportMsg'),
+
+    // Privacy
     btnWipeLocal: $('btnWipeLocal'),
     btnWipeAllButSession: $('btnWipeAllButSession'),
+
+    // Self-test + update
     btnRunSelfTest: $('btnRunSelfTest'),
     selfTestList: $('selfTestList'),
     selfTestStatus: $('selfTestStatus'),
     btnUpdate: $('btnUpdate'),
   };
 
-  // ---------- Session Storage ----------
-  const dbKey = {
-    session: 'resibo.session',
-    receipts: 'resibo.receipts',
-    queue: 'resibo.queue',
-  };
+  // ---------- Local Storage helpers ----------
   const getLocal = (k, f=null) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
   const setLocal = (k, v) => localStorage.setItem(k, JSON.stringify(v));
   const delLocal = (k) => localStorage.removeItem(k);
@@ -98,7 +124,7 @@
   // ---------- Service Worker Registration ----------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=3.1.4')
+      navigator.serviceWorker.register('./sw.js?v=3.1.5')
         .then(reg => {
           if (reg.waiting) { els.btnUpdate.hidden = false; }
           reg.addEventListener('updatefound', () => {
@@ -119,6 +145,70 @@
     });
   }
 
+  // ---------- SETTINGS (NEW) ----------
+  // Load saved settings into inputs
+  (function hydrateSettings() {
+    els.setCsvUrl.value = localStorage.getItem(LS.csvUrl) || '';
+    els.setEmailUrl.value = localStorage.getItem(LS.emailEndpoint) || '';
+    // Also prefill Step 1 input if empty
+    if (!els.inpCsvUrl.value && els.setCsvUrl.value) {
+      els.inpCsvUrl.value = els.setCsvUrl.value;
+    }
+  })();
+
+  els.btnSaveSettings.addEventListener('click', () => {
+    const csv = (els.setCsvUrl.value || '').trim();
+    const eml = (els.setEmailUrl.value || '').trim();
+    if (csv) localStorage.setItem(LS.csvUrl, csv); else localStorage.removeItem(LS.csvUrl);
+    if (eml) localStorage.setItem(LS.emailEndpoint, eml); else localStorage.removeItem(LS.emailEndpoint);
+    els.settingsMsg.textContent = 'Settings saved.';
+    els.settingsMsg.className = 'msg ok';
+    // reflect into Step 1
+    if (csv) els.inpCsvUrl.value = csv;
+    setTimeout(()=>{ els.settingsMsg.textContent=''; els.settingsMsg.className='msg'; }, 3000);
+  });
+
+  els.btnClearSettings.addEventListener('click', () => {
+    if (!confirm('Clear saved CSV URL and Email endpoint?')) return;
+    localStorage.removeItem(LS.csvUrl);
+    localStorage.removeItem(LS.emailEndpoint);
+    els.setCsvUrl.value = '';
+    els.setEmailUrl.value = '';
+    els.inpCsvUrl.value = '';
+    els.settingsMsg.textContent = 'Settings cleared.';
+    els.settingsMsg.className = 'msg ok';
+    setTimeout(()=>{ els.settingsMsg.textContent=''; els.settingsMsg.className='msg'; }, 3000);
+  });
+
+  els.btnTestCsv.addEventListener('click', async () => {
+    const url = (els.setCsvUrl.value || els.inpCsvUrl.value || '').trim();
+    if (!url) { els.settingsMsg.textContent = 'Enter a CSV URL first.'; els.settingsMsg.className='msg error'; return; }
+    try {
+      const res = await fetch(url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      els.settingsMsg.textContent = text.slice(0, 100).includes('NAME') ? 'CSV looks OK.' : 'CSV fetched. Check headers row.';
+      els.settingsMsg.className = 'msg ok';
+    } catch (e) {
+      els.settingsMsg.textContent = 'CSV test failed: ' + (e.message || e);
+      els.settingsMsg.className = 'msg error';
+    }
+  });
+
+  els.btnTestEmail.addEventListener('click', async () => {
+    const url = (els.setEmailUrl.value || '').trim();
+    if (!url) { els.settingsMsg.textContent = 'Enter an Email Endpoint first.'; els.settingsMsg.className='msg error'; return; }
+    try {
+      // Lightweight OPTIONS/GET probe via fetch (won’t send data)
+      const res = await fetch(url, { method: 'GET', mode: 'no-cors' });
+      els.settingsMsg.textContent = 'Endpoint is reachable (or CORS-silent). Try a real export to be sure.';
+      els.settingsMsg.className = 'msg ok';
+    } catch (e) {
+      els.settingsMsg.textContent = 'Endpoint check failed: ' + (e.message || e);
+      els.settingsMsg.className = 'msg error';
+    }
+  });
+
   // ---------- Verification ----------
   els.verifyForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -126,7 +216,7 @@
     const name = $('inpName').value.trim();
     const tin = $('inpTIN').value.trim();
     const gmail = $('inpGmail').value.trim().toLowerCase();
-    const csvUrl = $('inpCsvUrl').value.trim();
+    const csvUrlInput = $('inpCsvUrl').value.trim();
     const csvPaste = $('inpCsvPaste').value.trim();
 
     if (!access_code || !name || !tin || !gmail) {
@@ -135,18 +225,22 @@
       return;
     }
 
+    // Prefer pasted CSV, else form CSV URL, else saved Settings CSV URL
     let csvText = '';
+    const savedCsv = localStorage.getItem(LS.csvUrl) || '';
+    const chosenUrl = csvUrlInput || savedCsv;
+
     try {
       if (csvPaste) {
         csvText = csvPaste;
-      } else if (csvUrl) {
+      } else if (chosenUrl) {
         const bust = `&_ts=${Date.now()}`;
-        const url = csvUrl.includes('?') ? (csvUrl + bust) : (csvUrl + '?output=csv' + bust);
+        const url = chosenUrl.includes('?') ? (chosenUrl + bust) : (chosenUrl + '?output=csv' + bust);
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`CSV fetch failed (${res.status})`);
         csvText = await res.text();
       } else {
-        els.verifyMsg.textContent = 'Provide CSV URL or paste CSV.';
+        els.verifyMsg.textContent = 'Provide CSV URL (or save it in Settings) or paste CSV.';
         els.verifyMsg.className = 'msg error';
         return;
       }
@@ -177,7 +271,7 @@
       name_norm: normalizeName(name),
       tin_norm: normalizeTIN(tin)
     };
-    setLocal(dbKey.session, session);
+    setLocal(LS.session, session);
     els.verifyMsg.textContent = 'Verification success. Session stored for 7 days.';
     els.verifyMsg.className = 'msg ok';
 
@@ -190,7 +284,7 @@
   $('btnClearVerify').addEventListener('click', () => {
     ['inpAccessCode','inpName','inpTIN','inpGmail','inpCsvUrl','inpCsvPaste'].forEach(id => $(id).value = '');
     els.verifyMsg.textContent = '';
-    delLocal(dbKey.session);
+    delLocal(LS.session);
   });
 
   function parseCsv(text) {
@@ -371,8 +465,8 @@
       const { text, avgConf } = await ocrCanvases(canvases);
       const parsed = parseFields(text);
 
-      // ------- NEW: Role detection & suggestions -------
-      const session = getLocal(dbKey.session, {});
+      // Role detection (from v3.1.4)
+      const session = getLocal(LS.session, {});
       const userTin = normalizeTIN(session.tin);
       const userName = normalizeName(session.name);
       const sellerTin = normalizeTIN(parsed.tin);
@@ -403,12 +497,10 @@
         monetary: { net: '', vat: '', total: parsed.amount || '' },
         payment: { method: '', terms: '' },
         notes: '',
-        // NEW fields
-        role,                              // SELLER/ISSUER or BUYER/PAYOR
-        transaction_type: '',              // user picks one
+        role,
+        transaction_type: '',
         transaction_suggestions: suggestions
       };
-      // --------------------------------------------------
 
       if (avgConf < OCR_CONF_THRESHOLD) {
         alert(`OCR confidence ${avgConf.toFixed(2)} < ${OCR_CONF_THRESHOLD}. Please review manually.`);
@@ -471,7 +563,7 @@
   function parseFields(text) {
     const raw = text || '';
     const t = raw.replace(/\s+/g,' ').toUpperCase();
-    // Try to capture a business name near words: "STORE", "COMPANY", "TRADING", etc. (best-effort)
+    // Guess a business name near common words
     const nameGuess = (t.match(/\b([A-Z0-9 '&.-]{3,40})(?:\s+(?:STORE|TRADING|ENTERPRISES|COMPANY|INCORPORATED|INC|CORP|CORPORATION))\b/) || [])[1];
 
     const tin = (t.match(/\b(\d{3}[- ]?\d{3}[- ]?\d{3})\b/) || [])[1] || '';
@@ -528,9 +620,8 @@
         <div class="flex">
           <button class="btn btn-ghost" data-act="validate" data-id="${r.file_id}">Validate</button>
         </div>
-        <p class="note">Role is derived by matching the receipt Seller Name/TIN to your session Name/TIN. If they match, the USER is the Seller/Issuer; otherwise the USER is the Buyer/Payor.</p>
+        <p class="note">Role is derived by matching Seller Name/TIN vs your session Name/TIN. If they match → SELLER/ISSUER; else BUYER/PAYOR.</p>
       `;
-      // restore selected value
       const select = div.querySelector('select[data-k="transaction_type"]');
       if (select) select.value = r.transaction_type || '';
 
@@ -567,7 +658,7 @@
     if (!rec.transaction_type) errs.push('Select a Transaction Type.');
     return errs;
   }
-  function persistRecords() { setLocal(dbKey.receipts, state.records); }
+  function persistRecords() { setLocal(LS.receipts, state.records); }
 
   // ---------- Export ----------
   $('btnZipExport').addEventListener('click', async () => {
@@ -579,19 +670,19 @@
     zip.file('data.csv', csv);
     zip.file('manifest.json', JSON.stringify(mani, null, 2));
     const blob = await zip.generateAsync({ type: 'blob' });
-    const session = getLocal(dbKey.session, {});
+    const session = getLocal(LS.session, {});
     const filename = `resibo_${(session.name||'user').toLowerCase().replace(/\s+/g,'')}_${Date.now()}.zip`;
     saveAs(blob, filename);
     toast('ZIP exported.');
   });
 
   $('btnEmailExport').addEventListener('click', async () => {
-    const endpoint = localStorage.getItem('resibo.emailEndpoint') || '';
-    if (!endpoint) { alert('Set Apps Script endpoint first (see README).'); return; }
+    const endpoint = localStorage.getItem(LS.emailEndpoint) || '';
+    if (!endpoint) { alert('Set Apps Script endpoint first (see Settings).'); return; }
     if (els.inpConfirmAll?.value !== 'yes') { toast('Please confirm: Select "Yes".', 'error'); return; }
     const payload = { version: VERSION, manifest: buildManifest(state.records), csv: buildCSV(state.records) };
     if (!navigator.onLine) {
-      const q = getLocal(dbKey.queue, []); q.push({ type: 'email', endpoint, payload, ts: Date.now() }); setLocal(dbKey.queue, q);
+      const q = getLocal(LS.queue, []); q.push({ type: 'email', endpoint, payload, ts: Date.now() }); setLocal(LS.queue, q);
       toast('Offline: export queued. Will send when online.'); return;
     }
     try {
@@ -611,7 +702,7 @@
       'DOCUMENT_TYPE','DOCUMENT_NUMBER',
       'RECEIPT_DATE','NET','VAT','TOTAL',
       'PAYMENT_METHOD','TERMS','NOTES',
-      'ROLE','TRANSACTION_TYPE'   // NEW columns
+      'ROLE','TRANSACTION_TYPE'
     ];
     const rows = [headers.join(',')];
     for (const r of records) {
@@ -630,7 +721,7 @@
   }
 
   function buildManifest(records) {
-    const session = getLocal(dbKey.session, {});
+    const session = getLocal(LS.session, {});
     return {
       app: 'Resibo App',
       version: VERSION,
@@ -649,7 +740,7 @@
 
   // ---------- Queue Flusher ----------
   window.addEventListener('online', async () => {
-    const q = getLocal(dbKey.queue, []); if (!q.length) return;
+    const q = getLocal(LS.queue, []); if (!q.length) return;
     const rest = [];
     for (const job of q) {
       try {
@@ -659,31 +750,21 @@
         }
       } catch { rest.push(job); }
     }
-    setLocal(dbKey.queue, rest);
+    setLocal(LS.queue, rest);
     if (!rest.length) toast('Queued exports sent.');
-  });
-
-  // ---------- Privacy ----------
-  $('btnWipeLocal').addEventListener('click', () => {
-    if (!confirm('Delete ALL local data including session?')) return;
-    Object.values(dbKey).forEach(k => delLocal(k)); location.reload();
-  });
-  $('btnWipeAllButSession').addEventListener('click', () => {
-    if (!confirm('Delete receipts & queue but keep session?')) return;
-    delLocal(dbKey.receipts); delLocal(dbKey.queue); location.reload();
   });
 
   // ---------- Self Test ----------
   const SELFTEST_ITEMS = [
-    { name: 'Service Worker present', path: './sw.js?v=3.1.4' },
-    { name: 'Manifest present', path: './manifest.json?v=3.1.4' },
+    { name: 'Service Worker present', path: './sw.js?v=3.1.5' },
+    { name: 'Manifest present', path: './manifest.json?v=3.1.5' },
     { name: 'Icons 192', path: './icons/icon-192.png' },
     { name: 'Icons 512', path: './icons/icon-512.png' },
     { name: 'JSZip present', path: './libs/jszip.min.js' },
     { name: 'FileSaver present', path: './libs/FileSaver.min.js' },
     { name: 'pdf.js present', path: './libs/pdf.min.js' },
     { name: 'Tesseract present', path: './libs/tesseract.min.js' },
-    { name: 'Cache version match', custom: async () => (('resibo-cache-v3.1.4' === CACHE_VERSION) ? 'ok' : 'fail') },
+    { name: 'Cache version match', custom: async () => (('resibo-cache-v3.1.5' === CACHE_VERSION) ? 'ok' : 'fail') },
   ];
 
   $('btnRunSelfTest').addEventListener('click', async () => {
@@ -707,7 +788,11 @@
 
   // ---------- Restore ----------
   (function initFromStorage() {
-    const session = getLocal(dbKey.session, null);
+    // Prefill Step 1 CSV from Settings if present
+    const savedCsv = localStorage.getItem(LS.csvUrl) || '';
+    if (savedCsv) els.inpCsvUrl.value = savedCsv;
+
+    const session = getLocal(LS.session, null);
     if (session && session.schema === SCHEMA_VERSION) {
       $('inpAccessCode').value = session.access_code || '';
       $('inpName').value = session.name || '';
@@ -720,7 +805,7 @@
       els.verifyMsg.textContent = 'Session found (within 7 days). You can re-verify if needed.';
       els.verifyMsg.className = 'msg ok';
     }
-    const saved = getLocal(dbKey.receipts, []);
+    const saved = getLocal(LS.receipts, []);
     if (Array.isArray(saved) && saved.length) { state.records = saved; renderRecords(); }
   })();
 

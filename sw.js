@@ -1,11 +1,11 @@
-/* Resibo App v3.1.4 - Service Worker */
-const CACHE_VERSION = 'resibo-cache-v3.1.4';
+/* Resibo App v3.1.5 - Service Worker */
+const CACHE_VERSION = 'resibo-cache-v3.1.5';
 const CORE = [
   './',
   './index.html',
-  './style.css?v=3.1.4',
-  './app.js?v=3.1.4',
-  './manifest.json?v=3.1.4',
+  './style.css?v=3.1.5',
+  './app.js?v=3.1.5',
+  './manifest.json?v=3.1.5',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './libs/jszip.min.js',
