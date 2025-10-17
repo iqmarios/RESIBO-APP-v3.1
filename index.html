@@ -2,25 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Resibo App v3.1.3</title>
+  <title>Resibo App v3.1.4</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="theme-color" content="#111827" />
   <meta name="description" content="Offline-capable PWA for receipt recording & reporting with privacy-first local OCR." />
 
-  <!-- PWA manifest (JSON) -->
-  <link rel="manifest" href="./manifest.json?v=3.1.3" />
+  <!-- PWA manifest -->
+  <link rel="manifest" href="./manifest.json?v=3.1.4" />
 
-  <!-- Icons (make sure these files exist) -->
+  <!-- Icons -->
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./icons/icon-512.png" />
 
-  <!-- Styles (single file: style.css) -->
-  <link rel="stylesheet" href="./style.css?v=3.1.3" />
+  <!-- Styles -->
+  <link rel="stylesheet" href="./style.css?v=3.1.4" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Resibo App <span class="muted">v3.1.3</span></h1>
+    <h1>Resibo App <span class="muted">v3.1.4</span></h1>
     <nav class="top-actions">
       <a href="#debug" class="btn btn-ghost" id="btnOpenDebug" aria-label="Open self-test panel">Self-Test</a>
       <button id="btnUpdate" class="btn btn-ghost" hidden>Update Ready</button>
@@ -163,22 +163,22 @@
     <small>© 2025 Resibo — Privacy-first receipt recording. All processing happens locally.</small>
   </footer>
 
-  <!-- Local libraries (must exist exactly at these paths) -->
+  <!-- Local libraries -->
   <script src="./libs/jszip.min.js"></script>
   <script src="./libs/FileSaver.min.js"></script>
   <script src="./libs/pdf.min.js"></script>
   <script src="./libs/tesseract.min.js"></script>
 
-  <!-- Version object used by app & self-test -->
+  <!-- Version object -->
   <script>
     window.__RESIBO__ = {
-      VERSION: '3.1.3',
-      CACHE_VERSION: 'resibo-cache-v3.1.3',
+      VERSION: '3.1.4',
+      CACHE_VERSION: 'resibo-cache-v3.1.4',
       BUILD_TIME: new Date().toISOString()
     };
   </script>
 
   <!-- Main app -->
-  <script src="./app.js?v=3.1.3"></script>
+  <script src="./app.js?v=3.1.4"></script>
 </body>
 </html>

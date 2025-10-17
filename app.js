@@ -1,13 +1,13 @@
-/* Resibo App v3.1.3 - app.js */
+/* Resibo App v3.1.4 - app.js */
 
 (() => {
   'use strict';
 
   // ---------- Version & Globals ----------
-  const VERSION = '3.1.3';
-  const CACHE_VERSION = 'resibo-cache-v3.1.3';
+  const VERSION = '3.1.4';
+  const CACHE_VERSION = 'resibo-cache-v3.1.4';
   const BUILD_TIME = new Date().toISOString();
-  const SCHEMA_VERSION = '3.1.3';
+  const SCHEMA_VERSION = '3.1.4';
   const SESSION_TTL_DAYS = 7;
   const OCR_CONF_THRESHOLD = 0.8;
   const TIMEZONE = 'Asia/Manila';
@@ -52,50 +52,45 @@
     receipts: 'resibo.receipts',
     queue: 'resibo.queue',
   };
-
-  function getLocal(key, fallback=null) {
-    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
-  }
-  function setLocal(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-  function delLocal(key) { localStorage.removeItem(key); }
+  const getLocal = (k, f=null) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
+  const setLocal = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const delLocal = (k) => localStorage.removeItem(k);
 
   // ---------- Utilities ----------
-  function nowInTZ(tz = TIMEZONE) {
+  const nowInTZ = (tz = TIMEZONE) => {
     const d = new Date();
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
     const y = parts.find(p=>p.type==='year').value;
     const m = parts.find(p=>p.type==='month').value;
     const da = parts.find(p=>p.type==='day').value;
     return new Date(`${y}-${m}-${da}T00:00:00Z`);
-  }
-  function ymd(dateStr) {
-    const m = String(dateStr || '').trim().match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
+  };
+  const ymd = (s) => {
+    const m = String(s || '').trim().match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
     return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
-  }
-  function withinGrace(expiryYMD, tz=TIMEZONE) {
+  };
+  const withinGrace = (expiryYMD, tz=TIMEZONE) => {
     const today = nowInTZ(tz);
     const exp = new Date(`${expiryYMD}T00:00:00Z`);
-    const dayMs = 24*60*60*1000;
-    return (exp.getTime() + dayMs) >= (today.getTime() - dayMs);
-  }
-  function guardCsvInjection(str) {
+    const day = 86400000;
+    return (exp.getTime() + day) >= (today.getTime() - day);
+  };
+  const guardCsvInjection = (str) => {
     const s = String(str ?? '');
     return (/^[=\-+@]/.test(s)) ? `'${s}` : s.replace(/[\r\n]+/g, ' ');
-  }
-  function sanitizePIILog(msg) {
-    return String(msg).replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig, '[email]')
-                      .replace(/\b\d{3}[- ]?\d{3}[- ]?\d{3}\b/g, '[tin]');
-  }
-  function toast(msg, cls='ok') {
+  };
+  const sanitizePIILog = (msg) => String(msg).replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig, '[email]')
+                                            .replace(/\b\d{3}[- ]?\d{3}[- ]?\d{3}\b/g, '[tin]');
+  const toast = (msg, cls='ok') => {
     els.exportMsg.textContent = msg;
     els.exportMsg.className = `msg ${cls}`;
     setTimeout(()=> { els.exportMsg.textContent=''; els.exportMsg.className='msg'; }, 4000);
-  }
+  };
+  const normalizeTIN = (tin) => String(tin || '').replace(/[^\d]/g,'');
+  const normalizeName = (s) => String(s||'').trim().toUpperCase().replace(/\s+/g,' ');
 
   // ---------- Connectivity ----------
-  function updateOnlineStatus() {
-    els.offlineBanner.hidden = navigator.onLine;
-  }
+  function updateOnlineStatus() { els.offlineBanner.hidden = navigator.onLine; }
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
   updateOnlineStatus();
@@ -103,7 +98,7 @@
   // ---------- Service Worker Registration ----------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=3.1.3')
+      navigator.serviceWorker.register('./sw.js?v=3.1.4')
         .then(reg => {
           if (reg.waiting) { els.btnUpdate.hidden = false; }
           reg.addEventListener('updatefound', () => {
@@ -169,28 +164,18 @@
       (r.GMAIL || '').trim().toLowerCase() === gmail
     );
 
-    if (!rec) {
-      els.verifyMsg.textContent = 'No matching ACTIVE record found. Check your inputs.';
-      els.verifyMsg.className = 'msg error';
-      return;
-    }
-    if ((rec.STATUS || '').toUpperCase() !== 'ACTIVE') {
-      els.verifyMsg.textContent = 'Record found but STATUS is not ACTIVE.';
-      els.verifyMsg.className = 'msg error';
-      return;
-    }
+    if (!rec) { els.verifyMsg.textContent = 'No matching ACTIVE record found. Check your inputs.'; els.verifyMsg.className = 'msg error'; return; }
+    if ((rec.STATUS || '').toUpperCase() !== 'ACTIVE') { els.verifyMsg.textContent = 'Record found but STATUS is not ACTIVE.'; els.verifyMsg.className = 'msg error'; return; }
     const exp = ymd(rec.EXPIRY_DATE);
-    if (!exp || !withinGrace(exp)) {
-      els.verifyMsg.textContent = 'No matching ACTIVE record with a valid EXPIRY_DATE.';
-      els.verifyMsg.className = 'msg error';
-      return;
-    }
+    if (!exp || !withinGrace(exp)) { els.verifyMsg.textContent = 'No matching ACTIVE record with a valid EXPIRY_DATE.'; els.verifyMsg.className = 'msg error'; return; }
 
     const session = {
       schema: SCHEMA_VERSION,
       verifiedAt: new Date().toISOString(),
       expiresInDays: SESSION_TTL_DAYS,
       access_code, name, tin, gmail,
+      name_norm: normalizeName(name),
+      tin_norm: normalizeTIN(tin)
     };
     setLocal(dbKey.session, session);
     els.verifyMsg.textContent = 'Verification success. Session stored for 7 days.';
@@ -241,9 +226,7 @@
       els.camPreview.srcObject = camStream;
       els.btnSnap.disabled = false;
       els.btnStopCam.disabled = false;
-    } catch (err) {
-      alert('Camera error: ' + String(err.message || err));
-    }
+    } catch (err) { alert('Camera error: ' + String(err.message || err)); }
   });
   $('btnStopCam').addEventListener('click', () => {
     if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; els.camPreview.srcObject = null; }
@@ -387,6 +370,23 @@
       }
       const { text, avgConf } = await ocrCanvases(canvases);
       const parsed = parseFields(text);
+
+      // ------- NEW: Role detection & suggestions -------
+      const session = getLocal(dbKey.session, {});
+      const userTin = normalizeTIN(session.tin);
+      const userName = normalizeName(session.name);
+      const sellerTin = normalizeTIN(parsed.tin);
+      const sellerName = normalizeName(parsed.seller_name || '');
+
+      const isUserSeller =
+        (userTin && sellerTin && userTin === sellerTin) ||
+        (!!userName && !!sellerName && (sellerName.includes(userName) || userName.includes(sellerName)));
+
+      const role = isUserSeller ? 'SELLER/ISSUER' : 'BUYER/PAYOR';
+      const suggestions = isUserSeller
+        ? ['Sales (Cash)', 'Sales (Charge)', 'Collection from Customer']
+        : ['Payment of Payables', 'Purchase (Cash)', 'Purchase (Charge)', 'Disbursement'];
+
       const rec = {
         schema: SCHEMA_VERSION,
         file_id: f.id,
@@ -397,13 +397,19 @@
         receipt_date: parsed.date || '',
         total_amount: parsed.amount || '',
         file_meta: { mime: f.type, pages: canvases.length },
-        seller: { name: '', tin: parsed.tin || '' },
+        seller: { name: parsed.seller_name || '', tin: parsed.tin || '' },
         buyer: { name: '', tin: '' },
         document: { type: 'RECEIPT', number: '' },
         monetary: { net: '', vat: '', total: parsed.amount || '' },
         payment: { method: '', terms: '' },
         notes: '',
+        // NEW fields
+        role,                              // SELLER/ISSUER or BUYER/PAYOR
+        transaction_type: '',              // user picks one
+        transaction_suggestions: suggestions
       };
+      // --------------------------------------------------
+
       if (avgConf < OCR_CONF_THRESHOLD) {
         alert(`OCR confidence ${avgConf.toFixed(2)} < ${OCR_CONF_THRESHOLD}. Please review manually.`);
       }
@@ -434,18 +440,16 @@
     return cnv;
   }
 
-  function imageToCanvas(dataURL) {
-    return new Promise(res => {
-      const img = new Image();
-      img.onload = () => {
-        const cnv = document.createElement('canvas');
-        cnv.width = img.width; cnv.height = img.height;
-        cnv.getContext('2d').drawImage(img, 0, 0);
-        res(cnv);
-      };
-      img.src = dataURL;
-    });
-  }
+  const imageToCanvas = (dataURL) => new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const cnv = document.createElement('canvas');
+      cnv.width = img.width; cnv.height = img.height;
+      cnv.getContext('2d').drawImage(img, 0, 0);
+      res(cnv);
+    };
+    img.src = dataURL;
+  });
 
   async function ocrCanvases(canvases) {
     if (!window.Tesseract) throw new Error('Tesseract library not loaded. Place ./libs/tesseract.min.js');
@@ -465,7 +469,11 @@
   }
 
   function parseFields(text) {
-    const t = text.replace(/\s+/g,' ').toUpperCase();
+    const raw = text || '';
+    const t = raw.replace(/\s+/g,' ').toUpperCase();
+    // Try to capture a business name near words: "STORE", "COMPANY", "TRADING", etc. (best-effort)
+    const nameGuess = (t.match(/\b([A-Z0-9 '&.-]{3,40})(?:\s+(?:STORE|TRADING|ENTERPRISES|COMPANY|INCORPORATED|INC|CORP|CORPORATION))\b/) || [])[1];
+
     const tin = (t.match(/\b(\d{3}[- ]?\d{3}[- ]?\d{3})\b/) || [])[1] || '';
     const date =
       (t.match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.]([0-2]\d|3[01]))\b/) || [])[1] ||
@@ -473,7 +481,8 @@
       (t.match(/\b((0[1-9]|1[0-2])[/-]([0-2]\d|3[01])[/-]20\d{2})\b/) || [])[1] || '';
     const amt = (t.match(/\b([₱P]?\s?\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?)\b/) || [])[1] || '';
     const cleanedAmt = amt.replace(/[₱P\s,]/g,'');
-    return { tin, date, amount: cleanedAmt };
+
+    return { tin, date, amount: cleanedAmt, seller_name: nameGuess || '' };
   }
 
   function renderRecords() {
@@ -483,27 +492,49 @@
     for (const r of state.records) {
       const div = document.createElement('div');
       div.className = 'card';
+      const opts = (r.transaction_suggestions || []).map(s => `<option value="${s}">${s}</option>`).join('');
       div.innerHTML = `
         <h3>${r.file_name} <small class="muted">conf ${Number(r.ocr_conf||0).toFixed(2)}</small></h3>
         <div class="grid grid-2">
+          <label>Seller Name <input data-k="seller.name" value="${escapeAttr(r.seller.name)}" /></label>
           <label>Seller TIN <input data-k="seller.tin" value="${escapeAttr(r.seller.tin)}" /></label>
+
+          <label>Buyer Name <input data-k="buyer.name" value="${escapeAttr(r.buyer.name||'')}" /></label>
           <label>Buyer TIN <input data-k="buyer.tin" value="${escapeAttr(r.buyer.tin||'')}" /></label>
+
           <label>Receipt Date (YYYY-MM-DD) <input data-k="receipt_date" value="${escapeAttr(r.receipt_date)}" /></label>
           <label>Document Type <input data-k="document.type" value="${escapeAttr(r.document.type)}" /></label>
           <label>Document Number <input data-k="document.number" value="${escapeAttr(r.document.number)}" /></label>
+
           <label>Total Amount <input data-k="monetary.total" value="${escapeAttr(r.monetary.total)}" /></label>
           <label>VAT Amount <input data-k="monetary.vat" value="${escapeAttr(r.monetary.vat)}" /></label>
           <label>Net Amount <input data-k="monetary.net" value="${escapeAttr(r.monetary.net)}" /></label>
+
+          <label>Role (auto)
+            <input data-k="role" value="${escapeAttr(r.role)}" readonly />
+          </label>
+          <label>Transaction Type (choose one)
+            <select data-k="transaction_type">
+              <option value="">— Select —</option>
+              ${opts}
+            </select>
+          </label>
+
           <label>Payment Method <input data-k="payment.method" value="${escapeAttr(r.payment.method)}" /></label>
           <label>Terms (for on-account) <input data-k="payment.terms" value="${escapeAttr(r.payment.terms)}" /></label>
+
           <label>Notes <input data-k="notes" value="${escapeAttr(r.notes)}" /></label>
         </div>
         <div class="flex">
           <button class="btn btn-ghost" data-act="validate" data-id="${r.file_id}">Validate</button>
         </div>
-        <p class="note">Format checks: TIN (###-###-###), Date (YYYY-MM-DD), Amounts numeric.</p>
+        <p class="note">Role is derived by matching the receipt Seller Name/TIN to your session Name/TIN. If they match, the USER is the Seller/Issuer; otherwise the USER is the Buyer/Payor.</p>
       `;
-      const inputs = div.querySelectorAll('input[data-k]');
+      // restore selected value
+      const select = div.querySelector('select[data-k="transaction_type"]');
+      if (select) select.value = r.transaction_type || '';
+
+      const inputs = div.querySelectorAll('input[data-k], select[data-k]');
       inputs.forEach(inp => inp.addEventListener('input', (ev) => {
         const k = ev.target.getAttribute('data-k');
         setRecField(r, k, ev.target.value);
@@ -533,6 +564,7 @@
     if (!d) errs.push('Receipt date must be YYYY-MM-DD.');
     const tot = Number(rec.monetary.total || 0);
     if (!(tot > 0)) errs.push('Total amount must be > 0.');
+    if (!rec.transaction_type) errs.push('Select a Transaction Type.');
     return errs;
   }
   function persistRecords() { setLocal(dbKey.receipts, state.records); }
@@ -578,7 +610,8 @@
       'BUYER_NAME','BUYER_TIN',
       'DOCUMENT_TYPE','DOCUMENT_NUMBER',
       'RECEIPT_DATE','NET','VAT','TOTAL',
-      'PAYMENT_METHOD','TERMS','NOTES'
+      'PAYMENT_METHOD','TERMS','NOTES',
+      'ROLE','TRANSACTION_TYPE'   // NEW columns
     ];
     const rows = [headers.join(',')];
     for (const r of records) {
@@ -588,7 +621,8 @@
         r.buyer?.name || '', r.buyer?.tin || '',
         r.document?.type || '', r.document?.number || '',
         r.receipt_date || '', r.monetary?.net || '', r.monetary?.vat || '', r.monetary?.total || '',
-        r.payment?.method || '', r.payment?.terms || '', r.notes || ''
+        r.payment?.method || '', r.payment?.terms || '', r.notes || '',
+        r.role || '', r.transaction_type || ''
       ].map(guardCsvInjection);
       rows.push(vals.join(','));
     }
@@ -605,7 +639,11 @@
       build_time: BUILD_TIME,
       session: { name: session.name || '', tin: session.tin || '', gmail: session.gmail || '', access_code: session.access_code || '' },
       count: records.length,
-      items: records.map(r => ({ file: r.file_name, conf: r.ocr_conf, date: r.receipt_date, total: r.monetary?.total || '' }))
+      items: records.map(r => ({
+        file: r.file_name, conf: r.ocr_conf,
+        date: r.receipt_date, total: r.monetary?.total || '',
+        role: r.role || '', transaction_type: r.transaction_type || ''
+      }))
     };
   }
 
@@ -637,42 +675,31 @@
 
   // ---------- Self Test ----------
   const SELFTEST_ITEMS = [
-    { name: 'Service Worker present', path: './sw.js?v=3.1.3' },
-    { name: 'Manifest present', path: './manifest.json?v=3.1.3' },
+    { name: 'Service Worker present', path: './sw.js?v=3.1.4' },
+    { name: 'Manifest present', path: './manifest.json?v=3.1.4' },
     { name: 'Icons 192', path: './icons/icon-192.png' },
     { name: 'Icons 512', path: './icons/icon-512.png' },
     { name: 'JSZip present', path: './libs/jszip.min.js' },
     { name: 'FileSaver present', path: './libs/FileSaver.min.js' },
     { name: 'pdf.js present', path: './libs/pdf.min.js' },
     { name: 'Tesseract present', path: './libs/tesseract.min.js' },
-    { name: 'Cache version match', custom: async () => (('resibo-cache-v3.1.3' === CACHE_VERSION) ? 'ok' : 'fail') },
+    { name: 'Cache version match', custom: async () => (('resibo-cache-v3.1.4' === CACHE_VERSION) ? 'ok' : 'fail') },
   ];
 
   $('btnRunSelfTest').addEventListener('click', async () => {
     els.selfTestList.innerHTML = '';
     els.selfTestStatus.textContent = 'Running…';
-
-    // Warn if opened from file:// (fetch cannot load local files)
     if (location.protocol === 'file:') {
-      const li = document.createElement('li');
-      li.className = 'fail';
-      li.textContent = 'Running from file:// — some checks will show Missing/Fail. Use GitHub Pages or Vercel to test.';
-      els.selfTestList.appendChild(li);
+      const li = document.createElement('li'); li.className='fail';
+      li.textContent = 'Running from file:// — use HTTPS to test properly.'; els.selfTestList.appendChild(li);
     }
-
     for (const it of SELFTEST_ITEMS) {
       let ok = false;
-      if (it.custom) {
-        ok = (await it.custom()) === 'ok';
-      } else {
-        try {
-          const res = await fetch(it.path, { cache: 'no-store' });
-          ok = res.ok;
-        } catch { ok = false; }
+      if (it.custom) ok = (await it.custom()) === 'ok';
+      else {
+        try { const res = await fetch(it.path, { cache: 'no-store' }); ok = res.ok; } catch { ok = false; }
       }
-      const li = document.createElement('li');
-      li.textContent = `${it.name} — ${ok ? 'OK' : 'Missing/Fail'}`;
-      li.className = ok ? 'ok' : 'fail';
+      const li = document.createElement('li'); li.textContent = `${it.name} — ${ok ? 'OK' : 'Missing/Fail'}`; li.className = ok ? 'ok' : 'fail';
       els.selfTestList.appendChild(li);
     }
     els.selfTestStatus.textContent = 'Done';
