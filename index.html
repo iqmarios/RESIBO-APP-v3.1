@@ -1,18 +1,18 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Resibo App v3.6.1</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="icon" sizes="512x512" href="icons/icon-512.png" />
-  <meta name="theme-color" content="#0b1220" />
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Resibo App v3.6.2</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" sizes="192x192" href="icons/icon-192.png"/>
+  <link rel="icon" sizes="512x512" href="icons/icon-512.png"/>
+  <meta name="theme-color" content="#0b1220"/>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Resibo App <span class="ver">v3.6.1</span></div>
+    <div class="brand">Resibo App <span class="ver">v3.6.2</span></div>
     <div class="actions">
       <button id="btn-run-selftest" class="btn ghost">Self-Test</button>
     </div>
@@ -24,7 +24,7 @@
       <h2>Settings</h2>
       <div class="row">
         <label>Issued Codes CSV URL (HTTPS)</label>
-        <input id="csvUrl" placeholder="https://docs.google.com/.../pub?output=csv" />
+        <input id="csvUrl" placeholder="https://docs.google.com/.../pub?output=csv"/>
       </div>
       <div class="row">
         <button id="btn-save-settings" class="btn">Save</button>
@@ -38,22 +38,10 @@
     <section class="card" id="step1">
       <h2>Step 1 — Access Verification</h2>
       <div class="grid g2">
-        <div class="row">
-          <label>Access Code</label>
-          <input id="acc_code" placeholder="RES-TEST-001" />
-        </div>
-        <div class="row">
-          <label>Name</label>
-          <input id="acc_name" placeholder="Your registered name" />
-        </div>
-        <div class="row">
-          <label>TIN</label>
-          <input id="acc_tin" placeholder="123-456-789" />
-        </div>
-        <div class="row">
-          <label>Gmail</label>
-          <input id="acc_gmail" placeholder="you@gmail.com" />
-        </div>
+        <div class="row"><label>Access Code</label><input id="acc_code" placeholder="RES-TEST-001"/></div>
+        <div class="row"><label>Name</label><input id="acc_name" placeholder="Your registered name"/></div>
+        <div class="row"><label>TIN</label><input id="acc_tin" placeholder="123-456-789"/></div>
+        <div class="row"><label>Gmail</label><input id="acc_gmail" placeholder="you@gmail.com"/></div>
       </div>
       <div class="row">
         <button id="btn-verify" class="btn">Verify</button>
@@ -65,24 +53,14 @@
     <!-- Step 2 -->
     <section class="card" id="step2">
       <h2>Step 2 — Capture & OCR</h2>
-
-      <div class="row">
-        <label class="subtle">You can upload images/PDF or use the camera below.</label>
-      </div>
-      <div class="row">
-        <input id="file-input" type="file" accept="image/*,application/pdf" multiple />
-      </div>
+      <div class="row"><input id="file-input" type="file" accept="image/*,application/pdf" multiple/></div>
 
       <div class="row wrap gap">
         <button id="btn-preprocess-basic" class="btn">Preprocess (Basic)</button>
         <button id="btn-preprocess-strong" class="btn">Strong Preprocess (Handwriting)</button>
         <button id="btn-preprocess-ultra" class="btn">Ultra Preprocess (Tiny Print + Handwriting)</button>
 
-        <label class="check">
-          <input id="chk-smallprint" type="checkbox" checked />
-          <span>Boost Small Print</span>
-        </label>
-
+        <label class="check"><input id="chk-smallprint" type="checkbox" checked/><span>Boost Small Print</span></label>
         <button id="btn-run-ocr" class="btn primary">Run OCR</button>
         <span id="ocr-status" class="pill">Idle</span>
       </div>
@@ -102,7 +80,7 @@
       </div>
     </section>
 
-    <!-- Viewer + Review -->
+    <!-- Step 3 -->
     <section class="card" id="step3">
       <h2>Step 3 — Manual Review & Edit</h2>
 
@@ -111,34 +89,26 @@
         <div class="viewer-toolbar">
           <div class="group">
             <button id="v-zoom-out" class="btn xs">−</button>
-            <input id="v-zoom-slider" type="range" min="30" max="600" value="100" />
+            <input id="v-zoom-slider" type="range" min="30" max="600" value="100"/>
             <button id="v-zoom-in" class="btn xs">+</button>
             <button id="v-1x" class="btn xs ghost">1×</button>
             <button id="v-fit" class="btn xs ghost">Fit</button>
             <button id="v-rotate" class="btn xs ghost">Rotate</button>
           </div>
           <div class="group">
-            <label>Brightness</label>
-            <input id="v-bright" type="range" min="50" max="200" value="100" />
-            <label>Contrast</label>
-            <input id="v-contrast" type="range" min="50" max="200" value="100" />
+            <label>Brightness</label><input id="v-bright" type="range" min="50" max="200" value="100"/>
+            <label>Contrast</label><input id="v-contrast" type="range" min="50" max="200" value="100"/>
           </div>
           <div class="group">
-            <label class="check">
-              <input id="toggle-before-after" type="checkbox" />
-              <span>Show “Before” image</span>
-            </label>
-            <label class="check">
-              <input id="chk-overlay" type="checkbox" checked />
-              <span>Show Overlay</span>
-            </label>
+            <label class="check"><input id="toggle-before-after" type="checkbox"/><span>Show “Before” image</span></label>
+            <label class="check"><input id="chk-overlay" type="checkbox" checked/><span>Show Overlay</span></label>
             <button id="btn-clear-overlay" class="btn xs ghost">Clear Overlay</button>
           </div>
         </div>
 
         <div id="viewer-canvas">
-          <img id="v-before" class="layer" alt="before" />
-          <img id="v-after" class="layer" alt="after" />
+          <img id="v-before" class="layer" alt="before"/>
+          <img id="v-after" class="layer" alt="after"/>
           <canvas id="v-overlay" class="layer"></canvas>
         </div>
       </div>
@@ -149,111 +119,44 @@
         <span id="save-status" class="pill">Idle</span>
       </div>
 
-      <!-- Form -->
+      <!-- Canonical form -->
       <div class="grid g3">
-        <div class="row">
-          <label>Receipt Date (YYYY-MM-DD)</label>
-          <input id="f_date" placeholder="yyyy-mm-dd" />
+        <div class="row"><label>Receipt Date (YYYY-MM-DD)</label><input id="f_date" placeholder="yyyy-mm-dd"/></div>
+        <div class="row"><label>Document Type</label>
+          <select id="f_doc_type"><option>Sales Invoice</option><option>Official Receipt</option><option>Receipt</option></select>
         </div>
-        <div class="row">
-          <label>Document Type</label>
-          <select id="f_doc_type">
-            <option>Sales Invoice</option>
-            <option>Official Receipt</option>
-            <option>Receipt</option>
-          </select>
-        </div>
-        <div class="row">
-          <label>Document Number</label>
-          <input id="f_doc_no" placeholder="SI-0001234 / OR-0001234" />
-        </div>
+        <div class="row"><label>Document Number</label><input id="f_doc_no" placeholder="SI-0001234 / OR-0001234"/></div>
 
-        <div class="row">
-          <label>Seller Name</label>
-          <input id="f_seller_name" />
-        </div>
-        <div class="row">
-          <label>Buyer Name</label>
-          <input id="f_buyer_name" />
-        </div>
-        <div class="row">
-          <label>Buyer TIN</label>
-          <input id="f_buyer_tin" />
-        </div>
+        <div class="row"><label>Seller Name</label><input id="f_seller_name"/></div>
+        <div class="row"><label>Buyer Name</label><input id="f_buyer_name"/></div>
+        <div class="row"><label>Buyer TIN</label><input id="f_buyer_tin"/></div>
 
-        <div class="row">
-          <label>Seller TIN</label>
-          <input id="f_seller_tin" />
-        </div>
-        <div class="row">
-          <label>Seller Address</label>
-          <input id="f_seller_addr" />
-        </div>
-        <div class="row">
-          <label>Buyer Address</label>
-          <input id="f_buyer_addr" />
-        </div>
+        <div class="row"><label>Seller TIN</label><input id="f_seller_tin"/></div>
+        <div class="row"><label>Seller Address</label><input id="f_seller_addr"/></div>
+        <div class="row"><label>Buyer Address</label><input id="f_buyer_addr"/></div>
 
-        <div class="row">
-          <label>Role (auto)</label>
-          <input id="f_role" readonly />
-        </div>
-        <div class="row">
-          <label>Transaction Type</label>
+        <div class="row"><label>Role (auto)</label><input id="f_role" readonly/></div>
+        <div class="row"><label>Transaction Type</label>
           <select id="f_txn_type">
             <option value="">— Select —</option>
-            <option>Cash Sales</option>
-            <option>Charge Sales</option>
-            <option>Collections</option>
-            <option>Payment to Suppliers</option>
-            <option>Disbursements</option>
-            <option>Cash Purchase</option>
-            <option>Charge Purchase</option>
+            <option>Cash Sales</option><option>Charge Sales</option><option>Collections</option>
+            <option>Payment to Suppliers</option><option>Disbursements</option>
+            <option>Cash Purchase</option><option>Charge Purchase</option>
           </select>
         </div>
-        <div class="row">
-          <label>Payment Method</label>
-          <input id="f_payment" placeholder="Cash / GCASH / Bank / Card ..." />
-        </div>
+        <div class="row"><label>Payment Method</label><input id="f_payment" placeholder="Cash / GCASH / Bank / Card ..."/></div>
 
-        <div class="row">
-          <label>Gross Amount</label>
-          <input id="f_gross" type="number" step="0.01" />
-        </div>
-        <div class="row">
-          <label>Vatable Sales</label>
-          <input id="f_vatable" type="number" step="0.01" />
-        </div>
-        <div class="row">
-          <label>VAT Amount</label>
-          <input id="f_vat" type="number" step="0.01" />
-        </div>
+        <div class="row"><label>Gross Amount</label><input id="f_gross" type="number" step="0.01"/></div>
+        <div class="row"><label>Vatable Sales</label><input id="f_vatable" type="number" step="0.01"/></div>
+        <div class="row"><label>VAT Amount</label><input id="f_vat" type="number" step="0.01"/></div>
 
-        <div class="row">
-          <label>Discount</label>
-          <input id="f_disc" type="number" step="0.01" />
-        </div>
-        <div class="row">
-          <label>Total Amount Due</label>
-          <input id="f_total" type="number" step="0.01" />
-        </div>
-        <div class="row">
-          <label>Withholding Tax</label>
-          <input id="f_wht" type="number" step="0.01" />
-        </div>
+        <div class="row"><label>Discount</label><input id="f_disc" type="number" step="0.01"/></div>
+        <div class="row"><label>Total Amount Due</label><input id="f_total" type="number" step="0.01"/></div>
+        <div class="row"><label>Withholding Tax</label><input id="f_wht" type="number" step="0.01"/></div>
 
-        <div class="row">
-          <label>Terms (for on-account)</label>
-          <input id="f_terms" />
-        </div>
-        <div class="row">
-          <label>Notes (vat-exempt/zero-rated/senior/pwd/solo-parent/other)</label>
-          <input id="f_notes" />
-        </div>
-        <div class="row">
-          <label>ID Number</label>
-          <input id="f_idno" />
-        </div>
+        <div class="row"><label>Terms (for on-account)</label><input id="f_terms"/></div>
+        <div class="row"><label>Notes</label><input id="f_notes" placeholder="vat-exempt/zero-rated/senior/pwd/solo-parent/other"/></div>
+        <div class="row"><label>ID Number</label><input id="f_idno"/></div>
       </div>
 
       <!-- Items -->
@@ -265,14 +168,8 @@
         </div>
         <div class="table-wrap">
           <table class="items">
-            <thead>
-              <tr>
-                <th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th>
-              </tr>
-            </thead>
-            <tbody id="items-body">
-              <!-- rows dynamically created -->
-            </tbody>
+            <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th></tr></thead>
+            <tbody id="items-body"></tbody>
           </table>
         </div>
       </div>
@@ -302,9 +199,7 @@
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js');
-      });
+      addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
     }
   </script>
 </body>

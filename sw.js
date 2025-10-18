@@ -1,5 +1,5 @@
-/* Resibo App SW — v3.6.1 (Canvas build) */
-const CACHE_VERSION = 'resibo-v3.6.1';
+/* Resibo Service Worker — v3.6.2 */
+const CACHE_VERSION = 'resibo-v3.6.2';
 const CORE = [
   './',
   './index.html',
@@ -15,22 +15,20 @@ const CORE = [
   './icons/icon-512.png'
 ];
 
-self.addEventListener('install', (e) => {
+self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_VERSION).then(c => c.addAll(CORE)));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (e) => {
+self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k)))
-    )
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k))))
   );
   self.clients.claim();
 });
 
-self.addEventListener('fetch', (e) => {
-  const { request } = e;
+self.addEventListener('fetch', e => {
+  const {request} = e;
   if (request.method !== 'GET') return;
   e.respondWith(
     caches.match(request).then(res => res || fetch(request).then(r => {
