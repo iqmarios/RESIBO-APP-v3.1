@@ -1,303 +1,181 @@
-What’s in this release (v3.1.6)
+# Resibo App — v3.2.0
 
-Handwriting OCR power-up using OpenCV: CLAHE contrast, median denoise, deskew, adaptive threshold.
+Privacy-first receipt capture and review. Everything runs **locally in your browser**:
+- **Capture**: upload images/PDFs or use the **built-in camera**
+- **Enhance**: OpenCV preprocessing (basic & handwriting/strong)
+- **OCR**: Tesseract.js on-device text recognition
+- **Review**: Large inline, zoomable viewer with form **right beneath**
+- **Export**: CSV (2 files) and ZIP (images + CSV + JSON)
+- **Access Control**: Verify via issued codes CSV (Google Sheets publish → CSV)
 
-Expanded Review Form (Step 3) with canonical fields + Line Items table.
+Live: _(your Vercel URL)_
 
-Image Viewer Modal (zoom 1:1, rotate 90°, brightness/contrast sliders).
+---
 
-Two-sheet CSV export: Receipts.csv and LineItems.csv (normalized by ReceiptID).
+## What’s new in v3.2.0
 
-ZIP export bundles images (original + processed), CSVs, and a small JSON manifest.
+- Added **Vatable Sales** field (between **Gross Amount** and **VAT Amount**)
+- Included **Vatable Sales** in saved records and **Receipts.csv**
+- Kept v3.1.9 features: camera (Start/Switch/Capture/Stop) + inline zoomable viewer
 
-Self-Test panel to quickly verify libs and PWA setup.
+---
 
-📁 Project Structure
+## Project Structure
+
 RESIBO-APP-v3.1/
 ├─ index.html
 ├─ app.js
 ├─ style.css
 ├─ manifest.json
 ├─ sw.js
-├─ README.md   ← (this file)
+├─ README.md
 ├─ icons/
-│  ├─ icon-192.png
-│  └─ icon-512.png
+│ ├─ icon-192.png
+│ └─ icon-512.png
 └─ libs/
-   ├─ jszip.min.js
-   ├─ FileSaver.min.js
-   ├─ pdf.min.js
-   ├─ pdf.worker.min.js
-   ├─ tesseract.min.js
-   └─ opencv.js      ← single-file WASM-enabled build (no separate .wasm needed)
+├─ jszip.min.js
+├─ FileSaver.min.js
+├─ pdf.min.js
+├─ pdf.worker.min.js
+├─ tesseract.min.js
+└─ opencv.js
 
+yaml
+Copy code
 
-Note: opencv.js used here is a single-file WASM-enabled build. You do not need opencv.wasm for this setup.
+> No separate `opencv.wasm` is required for this build.
 
-🚀 Quick Start (Non-coder friendly)
+---
 
-Upload these files 1:1 to your hosting (Vercel/GitHub Pages/any HTTPS).
+## Quick Start (Local)
 
-Open your site → Self-Test must show all green (HTTPS, SW, Manifest, Icons, JSZip, FileSaver, pdf.js, Tesseract, OpenCV, Cache/Version).
+1. **Files**: Ensure the structure above is in place.
+2. **Open** `index.html` via a local server (recommended) so the service worker can work:
+   - Quick way: `python3 -m http.server 8080` and open `http://localhost:8080/`
+3. First run:
+   - Go to **Settings** → paste your **CSV URL** (published Google Sheet → CSV) → **Save** → **Test CSV**.
 
-Go to Settings → paste your Issued Codes CSV URL → Save → Test CSV should say “CSV fetched”.
+---
 
-Step 1: Fill Access Code, Name, TIN, Gmail → Verify. It should say “Verification success. Session stored for 7 days.”
+## Deploy to Vercel
 
-Step 2: Upload images or PDFs → click Strong Preprocess (Handwriting) → Run OCR.
+1. Push this folder to a GitHub repo (public or private).
+2. In Vercel, **New Project** → import the repo.
+3. Framework preset: **Other** (static).
+4. Build settings: none (static site). Output is the repo root.
+5. Deploy.
 
-Step 3: Review/complete fields, add Line Items (use “Apply OCR Hints → Fields” if helpful).
+> After each update, bump versions in:
+> - `index.html` query strings `?v=3.2.0`
+> - `app.js` internal `APP_VERSION`
+> - `sw.js` `CACHE_VERSION = 'resibo-cache-v3.2.0'`
 
-Step 4: Export CSV (two files) or ZIP (images + CSV + JSON).
+Then **Clear site data** in the browser (DevTools → Application → Clear storage → _Clear site data_) and reload.
 
-Everything is local. You can reset anytime in Step 5.
+---
 
-🔐 Access Control (Issued Codes CSV)
+## Access Verification (Step 1)
 
-The app validates users from your Google Sheet that’s published as CSV.
-
-A. Sheet headers (must match exactly, lower-case):
+- Settings → paste your **Issued Codes CSV URL** (Google Sheets → File → Share → Publish to web → **CSV**).
+- Required headers in the sheet (lowercase):
 code, name, tin, gmail, status, expiry_date
 
-B. Sample rows
-RES-TEST-001, Maria Santos, 123-456-789-000, maria.santos@gmail.com, ACTIVE, 2030-12-31
-RES-EXPIRE-01, Juan Cruz,   111-222-333-444, juan.cruz@gmail.com,   ACTIVE, 2024-01-01
-RES-BLOCK-01,  Foo Bar,     555-666-777-888, foo@bar.com,           INACTIVE, 2030-12-31
+markdown
+Copy code
+- App matches **code + gmail** (case-insensitive). `status` must be `ACTIVE`. `expiry_date` must be ≥ today.
+- If valid: session stored locally for 7 days.
 
+---
 
-The app checks:
+## Capture & OCR (Step 2)
 
-status must be ACTIVE
+- **Upload** images/PDFs (PDF pages are auto-rendered to images).
+- Or use the **Camera**:
+- **Start Camera** → (optional) **Switch Camera** → **Capture** → **Stop**.
+- **Preprocess**
+- **Basic**: grayscale + Otsu threshold.
+- **Strong (Handwriting)**: histogram equalization, CLAHE, denoise, **auto-deskew**, adaptive threshold.
+- **Run OCR**: performs Tesseract OCR on the processed (or original) image(s).
 
-expiry_date must be today or later (format YYYY-MM-DD)
+> Tip: toggle **Show “Before” image** to switch between original/processed previews.
 
-C. How to publish the CSV (Google Sheets)
+---
 
-Open your sheet → File → Share → Publish to web.
+## Manual Review & Edit (Step 3)
 
-Choose Sheet = your “Issued Codes” tab and Format = Comma-separated values (.csv).
+Inline **large viewer** (no modal) sits above the form:
+- **Zoom controls**: Fit / 1:1 / − / Slider / + / Rotate
+- **Image controls**: Brightness, Contrast
+- **Pan**: drag the image; **pinch** to zoom on mobile
 
-Click Publish and copy the link ending with output=csv.
+Click **Apply OCR → Fields** to auto-suggest:
+- **Receipt Date**, **Document Type/No.**, **Total Amount Due**
+- (We can extend this to attempt **Vatable Sales** detection on request.)
 
-Paste that link into Settings → Issued Codes CSV URL.
+### Canonical Fields
 
-✅ If your link ends with /pubhtml?... it’s wrong for this app. Use Publish to web → CSV so the URL ends with output=csv.
+- Receipt Date (YYYY-MM-DD)
+- Seller Name / TIN / Address
+- Buyer Name / TIN / Address
+- Document Type / Number
+- Role (BUYER/PAYOR or SELLER/ISSUER)
+- Transaction Type (Cash Sales, Charge Sales, Collections, Payment to Suppliers, Disbursements, Cash Purchase, Charge Purchase)
+- Payment Method
+- **Gross Amount**
+- **Vatable Sales** ← **NEW in v3.2.0**
+- **VAT Amount**
+- Discount
+- Total Amount Due (= Gross + VAT − Discount)
+- Withholding Tax (optional)
+- Notes, ID Number, Terms
+- Line Items: Item | Quantity | Unit Price | Line Amount
 
-🧠 Workflow Overview
-Step 1 — Verify
+Click **Save Record** to store locally.
 
-Enter Access Code, Name, TIN, Gmail.
+---
 
-App fetches the CSV, finds a case-insensitive match by code + gmail, and checks ACTIVE + valid expiry.
+## Export (Step 4)
 
-On success, a 7-day local session is stored (no server).
+- **Export CSV** → downloads:
+- `Receipts.csv` (includes **VatableSales** column)
+- `LineItems.csv`
+- **Export ZIP** → downloads:
+- `images/` (original + processed if available)
+- `Receipts.csv`, `LineItems.csv`
+- `manifest.json` (export metadata)
 
-Step 2 — Capture & OCR
+---
 
-Upload images or PDFs (PDF pages are auto-converted to images locally).
+## Service Worker (Offline)
 
-Preprocess (Basic) or Strong Preprocess (Handwriting):
+- Pre-caches the app shell and libs.
+- **Network-first** for the verification **CSV** (so you always see the latest).
+- **Cache-first** for images/PDFs/libs.
+- Version key: `resibo-cache-v3.2.0`.
 
-CLAHE contrast, denoise (median), deskew (Hough), adaptive threshold.
+If the UI seems stuck on an old version:
+- Open DevTools → **Application** → **Clear storage** → **Clear site data** → Reload.
 
-Run OCR (Tesseract). You can toggle Before/After thumbnails.
+---
 
-Step 3 — Manual Review & Edit
+## Troubleshooting
 
-Fields (become your CSV columns):
+- **CSV URL missing / not fetching**: Paste the exact **Publish to web → CSV** link and click **Test CSV**.
+- **Camera doesn’t start**: Browser may need permission. On iOS Safari, ensure HTTPS and camera permission allowed in Settings.
+- **OCR empty / poor**: Try **Strong Preprocess (Handwriting)**, rotate to upright, increase Contrast slightly.
+- **Form not filled after OCR**: Click **Apply OCR → Fields** in Step 3, then review/edit.
+- **Icons/self-test**: Use **Self-Test** button to confirm libraries are loaded.
 
-Receipt Date (YYYY-MM-DD)
+---
 
-Seller Name / TIN / Address
+## Versioning Discipline
 
-Buyer Name / TIN / Address
+- Bump `?v=` in `index.html` and `CACHE_VERSION` in `sw.js` every release.
+- Keep `APP_VERSION` in `app.js` in sync.
+- After deploy, **Clear site data** and reload.
 
-Document Type / Document Number
+---
 
-Role (BUYER / SELLER) – auto suggestion based on session user vs. fields
+## License
 
-Transaction Type (dropdown):
-
-Cash Sales • Charge Sales • Collections • Payment to Suppliers • Disbursements • Cash Purchase • Charge Purchase
-
-Terms (for on-account)
-
-Payment Method (Cash, Bank Transfer, Card, eWallet, Check, Others)
-
-Gross Amount • VAT Amount • Discount • Total Amount Due (auto = Gross + VAT − Discount)
-
-Withholding Tax (optional)
-
-Notes (exempt/0%/senior/pwd/solo-parent/other)
-
-ID Number
-
-Line Items (table):
-
-Item • Quantity • Unit Price • Line Amount
-
-Add/Clear rows as needed.
-
-Helpers:
-
-Apply OCR Hints → Fields tries to fill date/doc no./largest amount. You still review and correct.
-
-Step 4 — Export
-
-Receipts.csv (top-level fields)
-
-LineItems.csv (normalized by ReceiptID)
-
-ZIP export includes:
-
-Receipts.csv, LineItems.csv
-
-manifest.json (small export summary)
-
-images/ (original + _processed images, if any)
-
-Step 5 — Cleanup
-
-Clear Session (keeps CSV URL and saved records)
-
-Full Reset (keeps only your CSV URL; clears everything else)
-
-📄 CSV Schemas
-Receipts.csv
-ReceiptID,ReceiptDate,
-SellerName,SellerTIN,SellerAddress,
-BuyerName,BuyerTIN,BuyerAddress,
-DocumentType,DocumentNumber,
-Role,TransactionType,Terms,PaymentMethod,
-GrossAmount,VATAmount,Discount,TotalAmountDue,WithholdingTax,
-Notes,IDNumber,SessionUserName,SessionUserTIN,SessionUserGmail,SavedAt
-
-LineItems.csv
-ReceiptID,Item,Quantity,UnitPrice,LineAmount
-
-
-ReceiptID is an auto-generated timestamp (unique per saved record).
-
-Values are CSV-escaped (commas/quotes handled automatically).
-
-🧪 Self-Test Panel (should be green)
-
-HTTPS
-
-Service Worker
-
-Manifest
-
-Icons
-
-JSZip
-
-FileSaver
-
-pdf.js
-
-Tesseract
-
-OpenCV
-
-Cache/Version
-
-If anything is red, see Troubleshooting below.
-
-🛠️ Troubleshooting (Common Issues)
-Symptom	Likely Cause	Fix
-SW registration 404 in console	sw.js path/version mismatch	Ensure the file exists at site root and index.html registers sw.js?v=3.1.6. Re-deploy. Hard refresh.
-Icons FAIL in Self-Test or 404 on /icons/icon-192.png	Missing icons	Add icons/icon-192.png and icons/icon-512.png (any PNGs are fine).
-CSV fetched: failed	Wrong link (pubhtml or gid) or unpublished	Publish to web as CSV; link must end with output=csv. Paste in Settings, click Test CSV.
-No matching ACTIVE record…	status not ACTIVE or expiry_date is past	Fix the row in the sheet; ensure expiry_date format YYYY-MM-DD (and not expired).
-OpenCV not ready	opencv.js missing	Put libs/opencv.js in place; confirm it loads over HTTPS.
-OCR very weak	Image too dark or skewed	Use Strong Preprocess (Handwriting) → rotate in the Image Modal, adjust brightness/contrast, then OCR again.
-ZIP missing processed images	You didn’t run preprocessing	Run Preprocess first; processed images are saved as *_processed.png in the ZIP.
-
-Tip: After deployment, do a hard refresh (Ctrl+F5) or Clear Site Data to update the service worker cache.
-
-🌐 Deployment Notes
-
-Works best on HTTPS (PWA requirement).
-
-Vercel: just import the repo and deploy (no special settings).
-
-GitHub Pages: enable Pages on the repo; ensure all files are at the root (or correct paths if using a subfolder).
-
-Service Worker caches files listed in sw.js → bump all ?v=3.1.6 strings and CACHE_VERSION whenever you change files.
-
-🔒 Privacy & Security
-
-100% client-side processing.
-
-No data leaves your device unless you export and share the files yourself.
-
-Verification uses your published CSV read-only endpoint.
-
-No accounting computations are performed — the app records exactly what appears on the documents.
-
-🧩 Tech Bits (for reference)
-
-OCR: Tesseract.js
-
-Image processing: OpenCV.js (single file, WASM-enabled)
-
-PDF rasterization: pdf.js (local worker)
-
-Packaging: JSZip + FileSaver
-
-PWA: manifest.json + sw.js cache
-
-Strong Preprocess (high level):
-Gray → Equalize + CLAHE → Median denoise → Hough deskew → Adaptive threshold
-
-🧭 Versioning & Cache Discipline
-
-App version: v3.1.6
-
-In every updated release:
-
-Bump ?v=... in: index.html, app.js, style.css, manifest.json, and SW registration line.
-
-Update CACHE_VERSION in sw.js.
-
-Update the Self-Test title/version label in index.html.
-
-🗺️ Roadmap (approved next steps)
-
-Toggle for line removal (tabular receipts).
-
-Per-field OCR boxes (guided extraction).
-
-Optional Google Apps Script webhook (email delivery of ZIP).
-
-Stronger heuristics for dates/amounts/vendor names.
-
-🧾 Changelog
-v3.1.6
-
-Added strong OpenCV preprocessing pipeline for handwriting.
-
-Expanded Step-3 canonical schema + dynamic line items.
-
-Image modal (zoom/rotate/brightness/contrast).
-
-Two-sheet CSV export + ZIP bundling.
-
-Self-Test updated for new libs, version bump.
-
-🙋 FAQ
-
-Q: Can I use on a laptop without a camera?
-Yes. Upload scanned images or PDFs. The app converts PDF pages to images locally.
-
-Q: Do I need opencv.wasm?
-No. The opencv.js here is a single-file WASM-enabled build.
-
-Q: The date/amounts from OCR are wrong.
-Use Strong Preprocess, rotate if skewed, and still manually review. The app is designed so you remain the source of truth.
-
-📬 Support
-
-If you get stuck, copy the exact error text (or screenshot) and we’ll troubleshoot.
-Key checks: Self-Test, Console (F12), and CSV link (must be output=csv).
+Internal use for your organization. All processing is local in the browser; no user data is sent to a server unless you explicitly add your own endpoint.
