@@ -1,12 +1,9 @@
-/* Resibo App v3.6.0 — Clickable Overlay
- * - All v3.5 features + click a box on the receipt to jump to the matching field.
- * - Supports rotation (0/90/180/270), zoom, and pan.
- */
+/* Resibo App v3.6.1 — Tiny print OCR + clickable overlay */
 (() => {
   const $  = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
 
-  const APP_VERSION = '3.6.0';
+  const APP_VERSION = '3.6.1';
   const LS = { CSV_URL:'resibo_csv_url', SESSION:'resibo_session', RECORDS:'resibo_records', OCRHINT:'resibo_ocr_hint' };
 
   let CSV_ROWS = [];
@@ -15,27 +12,15 @@
   let ocrHintsText = '';
 
   // Overlay state
-  // shape: {x,y,w,h,type:'item'|'quantity'|'unitprice'|'lineamount', color, rowIndex}
   const OVERLAY = { shapes: [], enabled: true, imgW: 0, imgH: 0 };
 
   // Camera
   let camStream = null;
   let camFacing = 'environment';
 
-  // ---------- utils ----------
-  const nowId = () => new Date().toISOString().replace(/[:.]/g,'').slice(0,15);
-  const clamp = (v,mi,ma)=>Math.max(mi,Math.min(ma,v));
-  const csvEsc = v => { const s=String(v??''); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
-  const toNum = v => (v===''||v==null)?'':Number(v);
-  const norm = s => (s||'').toLowerCase().replace(/\s+/g,' ').trim();
+  const setPill = (el, text, kind) => { if(!el) return; el.textContent=text; el.className='pill ' + (kind||''); };
 
-  function setPill(el, text, kind){
-    if(!el) return;
-    el.textContent = text;
-    el.className = 'pill ' + (kind || (text.toLowerCase().includes('ok') ? 'ok' : (text.toLowerCase().includes('warn')?'warn':'')));
-  }
-
-  // ---------- self-test ----------
+  // ---------------- Self-test
   function runSelfTest(){
     const tests = [
       ['HTTPS', ()=>location.protocol==='https:'],
@@ -60,7 +45,7 @@
     }
   }
 
-  // ---------- CSV ----------
+  // ---------------- CSV parsing / verification
   function splitCSVLine(line){
     const out=[]; let cur='',q=false;
     for(let i=0;i<line.length;i++){
@@ -72,7 +57,7 @@
     out.push(cur); return out;
   }
   function parseCSV(text){
-    const lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const lines=text.split(/\r?\n/).filter(Boolean);
     if(!lines.length) return [];
     const headers=lines[0].split(',').map(h=>h.trim().toLowerCase());
     const idx=h=>headers.indexOf(h);
@@ -101,16 +86,14 @@
       setPill($('#csv-status'),'Fetch failed','warn'); return false;
     }
   }
-
-  // ---------- verification ----------
   async function verify(){
     const code=$('#acc_code').value.trim();
     const name=$('#acc_name').value.trim();
     const tin=$('#acc_tin').value.trim();
     const gmail=$('#acc_gmail').value.trim();
-    if(!code||!name||!tin||!gmail){ setPill($('#verify-status'),'Fill Access Code/Name/TIN/Gmail','warn'); return; }
     const url=$('#csvUrl').value.trim()||localStorage.getItem(LS.CSV_URL);
     if(!url){ setPill($('#verify-status'),'CSV URL missing','warn'); return; }
+    localStorage.setItem(LS.CSV_URL,url);
     if(!CSV_ROWS.length) await testCSV(url);
     const hit=CSV_ROWS.find(r=>(r.code||'').toLowerCase()===code.toLowerCase() && (r.gmail||'').toLowerCase()===gmail.toLowerCase());
     const active=(hit?.status||'').toLowerCase()==='active';
@@ -122,7 +105,7 @@
     $('#step2').scrollIntoView({behavior:'smooth'});
   }
 
-  // ---------- upload/pdf ----------
+  // ---------------- Upload / PDF
   $('#file-input')?.addEventListener('change', async e=>{
     const files=Array.from(e.target.files||[]);
     for(const f of files){
@@ -149,11 +132,10 @@
     }
   }
   async function addFile(file){
-    const id=nowId()+'_'+Math.random().toString(36).slice(2,7);
+    const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
     const urlOriginal=URL.createObjectURL(file);
     uploadedFiles.push({id,name:file.name,file,urlOriginal,urlProcessed:null,rotation:0,ocr:null});
   }
-
   function renderThumbs(){
     const host=$('#thumbs'); host.innerHTML='';
     uploadedFiles.forEach(f=>{
@@ -171,13 +153,13 @@
   }
   $('#toggle-before-after')?.addEventListener('change', ()=>{ renderThumbs(); if(currentViewId) showInViewer(currentViewId); });
 
-  // ---------- OpenCV pipelines ----------
+  // ---------------- OpenCV pipelines (tiny print tuned)
   async function preprocessAll(pipeline){
     if(!window.cv) return setPill($('#ocr-status'),'OpenCV not ready','warn');
     setPill($('#ocr-status'),'Preprocessing…');
-    const smallBoost = $('#chk-smallprint')?.checked;
+    const boostSmall = $('#chk-smallprint')?.checked;
     for(const f of uploadedFiles){
-      const url = await processOne(f.urlOriginal, (m)=>pipeline(m, smallBoost), f.rotation||0);
+      const url = await processOne(f.urlOriginal, (m)=>pipeline(m, boostSmall), f.rotation||0);
       f.urlProcessed = url;
     }
     setPill($('#ocr-status'),'Preprocess done','ok');
@@ -214,17 +196,34 @@
     let bin=new cv.Mat(); cv.adaptiveThreshold(sharp,bin,255,cv.ADAPTIVE_THRESH_MEAN_C,cv.THRESH_BINARY,35,10); sharp.delete(); return bin;
   }
   function pipeUltra(src, small=false){
+    // Designed for tiny printed text + cursive
     let g=new cv.Mat(); cv.cvtColor(src,g,cv.COLOR_RGBA2GRAY);
-    if(small){ let up=new cv.Mat(); cv.resize(g,up,new cv.Size(0,0),1.9,1.9,cv.INTER_CUBIC); g.delete(); g=up; }
+
+    // Strong upscale for micro-fonts
+    let up=new cv.Mat(); cv.resize(g,up,new cv.Size(0,0), small?2.0:1.6, small?2.0:1.6, cv.INTER_CUBIC); g.delete();
+
+    // Illumination normalization
     let kernel=cv.getStructuringElement(cv.MORPH_RECT,new cv.Size(31,31));
-    let bg=new cv.Mat(); cv.morphologyEx(g,bg,cv.MORPH_OPEN,kernel);
-    let normIllum=new cv.Mat(); cv.subtract(g,bg,normIllum); bg.delete(); kernel.delete();
-    const cla=new cv.CLAHE(2.0,new cv.Size(8,8)); cla.apply(normIllum,normIllum); cla.delete();
+    let bg=new cv.Mat(); cv.morphologyEx(up,bg,cv.MORPH_OPEN,kernel);
+    let normIllum=new cv.Mat(); cv.subtract(up,bg,normIllum); bg.delete(); kernel.delete();
+
+    // Local contrast for tiny strokes
+    const cla=new cv.CLAHE(2.5,new cv.Size(8,8)); cla.apply(normIllum,normIllum); cla.delete();
+
+    // De-noise but preserve edges
     cv.medianBlur(normIllum,normIllum,3);
+
+    // Slight unsharp
     let blur=new cv.Mat(); cv.GaussianBlur(normIllum,blur,new cv.Size(0,0),3,3);
     let sharp=new cv.Mat(); cv.addWeighted(normIllum,1.7,blur,-0.7,0,sharp); blur.delete(); normIllum.delete();
+
+    // Deskew
     const ang=estimateSkew(sharp); let desk=rotateMat(sharp,-ang); sharp.delete();
-    let bin=new cv.Mat(); cv.adaptiveThreshold(desk,bin,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY,31,8); desk.delete();
+
+    // Adaptive binarization tuned for small glyphs
+    let bin=new cv.Mat(); cv.adaptiveThreshold(desk,bin,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY,31,7); desk.delete();
+
+    // Optional thin line removal (tables) to help OCR
     try {
       let edges=new cv.Mat(); cv.Canny(bin,edges,50,150);
       let lines=new cv.Mat(); cv.HoughLinesP(edges,lines,1,Math.PI/180,120,bin.cols/6,10);
@@ -242,21 +241,28 @@
       }
       edges.delete(); lines.delete();
     } catch(e){}
+    up.delete();
     return bin;
   }
   function estimateSkew(g){ let e=new cv.Mat(); cv.Canny(g,e,50,150); let L=new cv.Mat(); cv.HoughLines(e,L,1,Math.PI/180,150); e.delete(); if(!L.rows){L.delete();return 0;}
     const a=[]; for(let i=0;i<L.rows;i++){ let th=L.data32F[i*2+1]*(180/Math.PI); if(th>90) th-=180; a.push(th); } L.delete(); a.sort((x,y)=>x-y); return a[Math.floor(a.length/2)]||0; }
 
-  // ---------- OCR ----------
+  // ---------------- OCR
   async function runOCR(){
     if(!window.Tesseract) return setPill($('#ocr-status'),'Tesseract not ready','warn');
     if(!uploadedFiles.length) return setPill($('#ocr-status'),'No images','warn');
     setPill($('#ocr-status'),'OCR running…');
-    const tessOpts = { tessedit_pageseg_mode: 6, classify_bln_numeric_mode: 0 };
+
+    // Tesseract tuned for small print
+    const opts = {
+      tessedit_pageseg_mode: 6,  // Assume a block of text
+      preserve_interword_spaces: 1
+    };
+
     let all='';
     for(const f of uploadedFiles){
       const src = ($('#toggle-before-after').checked || !f.urlProcessed) ? f.urlOriginal : (f.urlProcessed||f.urlOriginal);
-      const { data } = await Tesseract.recognize(src,'eng',{ ...tessOpts });
+      const { data } = await Tesseract.recognize(src,'eng',opts);
       const conf = data.confidence ?? 0;
       f.ocr = { text:data.text||'', conf:conf||0 };
       all += '\n' + (data.text||'');
@@ -268,7 +274,8 @@
     $('#step3').scrollIntoView({behavior:'smooth'});
   }
 
-  // ---------- Smart mapping ----------
+  // ---------------- Smart mapping helpers
+  const norm = s => (s||'').toLowerCase().replace(/\s+/g,' ').trim();
   function levenshtein(a,b){
     a=a||''; b=b||'';
     const m=a.length, n=b.length;
@@ -292,22 +299,6 @@
       if(levenshtein(window,label)<=maxDist) return true;
     }
     return false;
-  }
-  function findLabelValue(lines, labelVariants, {valueType='auto', window=1}={}){
-    for(let i=0;i<lines.length;i++){
-      const line=lines[i];
-      if(labelVariants.some(l=>fuzzyIncludes(line,l))){
-        const candidates=[];
-        const same = line.split(/[:\-–]/).slice(1).join(':').trim();
-        if(same) candidates.push(same);
-        for(let k=1;k<=window && (i+k)<lines.length;k++) candidates.push(lines[i+k].trim());
-        for(const cand of candidates){
-          const v = pickValueByType(cand, valueType);
-          if(v!=null) return v;
-        }
-      }
-    }
-    return null;
   }
   function pickValueByType(text,type){
     const t=text.trim();
@@ -333,7 +324,44 @@
     }
     return pickValueByType(t,'amount') ?? pickValueByType(t,'date') ?? t;
   }
-
+  function findLabelValue(lines, labels, {valueType='auto', window=1}={}){
+    for(let i=0;i<lines.length;i++){
+      const line=lines[i];
+      if(labels.some(l=>fuzzyIncludes(line,l))){
+        const candidates=[];
+        const same = line.split(/[:\-–]/).slice(1).join(':').trim();
+        if(same) candidates.push(same);
+        for(let k=1;k<=window && (i+k)<lines.length;k++) candidates.push(lines[i+k].trim());
+        for(const cand of candidates){
+          const v = pickValueByType(cand, valueType);
+          if(v!=null) return v;
+        }
+      }
+    }
+    return null;
+  }
+  function pickLargestAmount(lines){
+    const nums = Array.from(lines.join(' ').matchAll(/\b(?:₱|\$)?\s*\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?\b/g)).map(m=>Number(m[0].replace(/[₱$\s,]/g,'')));
+    if(!nums.length) return null;
+    return Math.max(...nums);
+  }
+  function extractLineItemsHeuristic(lines){
+    const out=[];
+    for(const ln of lines){
+      const clean = ln.replace(/[|]/g,' ').replace(/\s{2,}/g,' ').trim();
+      const nums = Array.from(clean.matchAll(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?\b/g)).map(m=>m[0].replace(/[,\s]/g,''));
+      if(nums.length>=2){
+        const qty = Number(nums[0]);
+        const price = Number(nums[1]||'');
+        const amount = Number(nums[2]|| (qty&&price? (qty*price).toFixed(2) : ''));
+        const itemName = clean.replace(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?\b/g,'').replace(/[×x*@=:]/g,' ').replace(/\s{2,}/g,' ').trim();
+        if(itemName && (qty||price||amount)){
+          out.push({Item:itemName, Quantity:qty||'', UnitPrice:price||'', LineAmount:amount||''});
+        }
+      }
+    }
+    return out.slice(0,20);
+  }
   function mapOCRToFields(raw){
     const t = (raw||'').replace(/\r/g,'');
     const lines = t.split('\n').map(x=>x.trim()).filter(Boolean);
@@ -383,30 +411,8 @@
       items
     };
   }
-  function pickLargestAmount(lines){
-    const nums = Array.from(lines.join(' ').matchAll(/\b(?:₱|\$)?\s*\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?\b/g)).map(m=>Number(m[0].replace(/[₱$\s,]/g,'')));
-    if(!nums.length) return null;
-    return Math.max(...nums);
-  }
-  function extractLineItemsHeuristic(lines){
-    const out=[];
-    for(const ln of lines){
-      const clean = ln.replace(/[|]/g,' ').replace(/\s{2,}/g,' ').trim();
-      const nums = Array.from(clean.matchAll(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?\b/g)).map(m=>m[0].replace(/[,\s]/g,''));
-      if(nums.length>=2){
-        const qty = Number(nums[0]);
-        const price = Number(nums[1]||'');
-        const amount = Number(nums[2]|| (qty&&price? (qty*price).toFixed(2) : ''));
-        const itemName = clean.replace(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?\b/g,'').replace(/[×x*@=:]/g,' ').replace(/\s{2,}/g,' ').trim();
-        if(itemName && (qty||price||amount)){
-          out.push({Item:itemName, Quantity:qty||'', UnitPrice:price||'', LineAmount:amount||''});
-        }
-      }
-    }
-    return out.slice(0,20);
-  }
 
-  // ---------- Layout-based table parser + overlay (clickable) ----------
+  // ---------------- Layout-based table parser + overlay (clickable)
   async function parseTableFromCurrent(){
     const f = uploadedFiles.find(x=>x.id===currentViewId) || uploadedFiles[0];
     if(!f) return setPill($('#save-status'),'No image','warn');
@@ -415,7 +421,7 @@
     const mat = await loadImageToMat(srcUrl);
     if(!mat) return setPill($('#save-status'),'OpenCV image load failed','warn');
 
-    // Prepare bin for line detection
+    // Prep
     let g=new cv.Mat(); cv.cvtColor(mat,g,cv.COLOR_RGBA2GRAY);
     let g2=new cv.Mat(); cv.resize(g,g2,new cv.Size(0,0),1.3,1.3,cv.INTER_CUBIC); g.delete();
     let bin=new cv.Mat(); cv.adaptiveThreshold(g2,bin,255,cv.ADAPTIVE_THRESH_MEAN_C,cv.THRESH_BINARY_INV,35,10); g2.delete();
@@ -442,8 +448,8 @@
     boxes.sort((a,b)=> (a.y===b.y ? a.x-b.x : a.y-b.y));
 
     if(!boxes.length){
-      cleanCv([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK]);
-      return setPill($('#save-status'],'No table grid detected (used heuristic).','warn');
+      clean([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK]);
+      return setPill($('#save-status'),'No table grid detected','warn');
     }
 
     const table = boxes[0];
@@ -461,12 +467,12 @@
     const rows = projectPeaks(rh, 'horizontal').sort((a,b)=>a-b);
 
     if(cols.length<3 || rows.length<2){
-      cleanCv([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK, roi,rg,rbin,rh,rv,hk,vk]);
-      return setPill($('#save-status'],'Table too faint (used heuristic).','warn');
+      clean([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK, roi,rg,rbin,rh,rv,hk,vk]);
+      return setPill($('#save-status'),'Table too faint','warn');
     }
 
-    const colEdges = uniqueSorted(cols);
-    const rowEdges = uniqueSorted(rows);
+    const colEdges = unique(cols);
+    const rowEdges = unique(rows);
 
     const toAbs = (x,y,w,h)=>({x:table.x+x, y:table.y+y, w, h});
 
@@ -476,10 +482,10 @@
       const y1=rowEdges[r], y2=rowEdges[r+1]; const height=y2-y1; if(height<18) continue;
 
       const last3 = colEdges.slice(-3);
-      const itemRight = last3[0] ?? colEdges[colEdges.length-1];
       const qtyCol    = last3[0];
       const priceCol  = last3[1] ?? last3[0];
       const amtCol    = last3[2] ?? last3[1];
+      const itemRight = qtyCol;
 
       const regions = [
         { key:'Item',       x1:0,          x2:itemRight-2, color:'#1e3a8a' },
@@ -502,9 +508,9 @@
         } else {
           obj[reg.key] = (txt||'').replace(/\s+/g,' ').trim();
         }
-        // overlay rect in absolute coordinates with rowIndex
+        // overlay rect
         const abs = toAbs(rect.x, rect.y, rect.w, rect.h);
-        overlayShapes.push({ ...abs, type: reg.key.toLowerCase(), color: reg.color, rowIndex: items.length /* tentative */ });
+        overlayShapes.push({ ...abs, type: reg.key.toLowerCase(), color: reg.color, rowIndex: items.length });
       }
       if(obj.Item || obj.Quantity || obj.UnitPrice || obj.LineAmount){
         items.push(obj);
@@ -515,23 +521,18 @@
     $('#items-body').innerHTML='';
     items.slice(0,40).forEach(it=> addItemRow(it.Item,it.Quantity,it.UnitPrice,it.LineAmount));
     const rowsEls = $$('#items-body tr');
+    OVERLAY.shapes = overlayShapes.map(s=>({ ...s, rowIndex: Math.max(0, Math.min(s.rowIndex, rowsEls.length-1)) }));
 
-    // Re-tag shapes with their final rowIndex one-by-one (already best effort above)
-    OVERLAY.shapes = overlayShapes.map(s=>({ ...s, rowIndex: clamp(s.rowIndex,0,rowsEls.length-1) }));
-
-    const f = uploadedFiles.find(x=>x.id===currentViewId) || uploadedFiles[0];
-    const img = ($('#toggle-before-after').checked || !f.urlProcessed) ? $('#v-before') : $('#v-after');
+    const img = ($('#toggle-before-after').checked ? $('#v-before') : $('#v-after'));
     OVERLAY.imgW = img.naturalWidth || OVERLAY.imgW;
     OVERLAY.imgH = img.naturalHeight || OVERLAY.imgH;
     drawOverlay();
 
     setPill($('#save-status'),`Parsed ${items.length} line item(s) via layout grid`,'ok');
 
-    cleanCv([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK, roi,rg,rbin,rh,rv,hk,vk]);
+    clean([mat,bin,horiz,vert,grid,contours,hierarchy,horizK,vertK, roi,rg,rbin,rh,rv,hk,vk]);
 
-    // helpers
-    function cleanCv(arr){ try{ arr.forEach(m=>{ if(m && m.delete) m.delete(); }); }catch(e){} }
-    function uniqueSorted(a){ return Array.from(new Set(a)).sort((x,y)=>x-y); }
+    function unique(a){ return Array.from(new Set(a)).sort((x,y)=>x-y); }
     function projectPeaks(mask, dir){
       const peaks=[];
       if(dir==='vertical'){
@@ -547,6 +548,7 @@
       }
       return peaks;
     }
+    function clean(arr){ try{ arr.forEach(m=>{ if(m && m.delete) m.delete(); }); }catch(e){} }
   }
 
   async function loadImageToMat(url){
@@ -565,12 +567,12 @@
     const c=document.createElement('canvas'); cv.imshow(c,mat);
     const url=c.toDataURL('image/png',0.95);
     try{
-      const { data } = await Tesseract.recognize(url,'eng',{ tessedit_pageseg_mode: 6 });
+      const { data } = await Tesseract.recognize(url,'eng',{ tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
       return data.text||'';
     }catch{ return ''; }
   }
 
-  // ---------- Overlay drawing + clicking ----------
+  // ---------------- Overlay drawing + clicking
   function drawOverlay(){
     const canvas = $('#v-overlay');
     const show = $('#chk-overlay')?.checked;
@@ -601,39 +603,26 @@
   }
   function clearOverlay(){ OVERLAY.shapes=[]; drawOverlay(); setPill($('#save-status'),'Overlay cleared','ok'); }
 
-  // Map click → intrinsic image coords (handle rotation multiples of 90°)
-  function overlayClick(e){
+  // click → focus corresponding input
+  $('#v-overlay')?.addEventListener('click', e=>{
     if(!OVERLAY.enabled || !OVERLAY.shapes.length) return;
     const canvas = $('#v-overlay');
     const rect = canvas.getBoundingClientRect();
     const rx = e.clientX - rect.left;
     const ry = e.clientY - rect.top;
 
-    // convert to intrinsic coords
     const scaleX = (OVERLAY.imgW || canvas.width) / rect.width;
     const scaleY = (OVERLAY.imgH || canvas.height) / rect.height;
     let x = rx * scaleX, y = ry * scaleY;
 
-    // adjust for viewer rotation (approx for multiples of 90)
     const rot = (viewer.rot||0) % 360;
-    if(rot===90){
-      const ox=x, oy=y;
-      x = oy;
-      y = (OVERLAY.imgH) - ox;
-    }else if(rot===180){
-      x = (OVERLAY.imgW) - x;
-      y = (OVERLAY.imgH) - y;
-    }else if(rot===270){
-      const ox=x, oy=y;
-      x = (OVERLAY.imgW) - oy;
-      y = ox;
-    }
+    if(rot===90){ const ox=x, oy=y; x=oy; y=(OVERLAY.imgH)-ox; }
+    else if(rot===180){ x=(OVERLAY.imgW)-x; y=(OVERLAY.imgH)-y; }
+    else if(rot===270){ const ox=x, oy=y; x=(OVERLAY.imgW)-oy; y=ox; }
 
-    // find topmost shape containing (x,y)
     const hit = OVERLAY.shapes.find(s => x>=s.x && x<=s.x+s.w && y>=s.y && y<=s.y+s.h);
     if(!hit) return;
 
-    // focus corresponding input
     const rows = $$('#items-body tr');
     const row = rows[hit.rowIndex] || rows[0];
     if(!row) return;
@@ -650,10 +639,9 @@
       input.classList.add('flash','flash-anim');
       setTimeout(()=>input.classList.remove('flash','flash-anim'), 1200);
     }
-  }
-  $('#v-overlay')?.addEventListener('click', overlayClick);
+  });
 
-  // ---------- Apply OCR → Fields ----------
+  // ---------------- Apply OCR → Fields
   function applyOCR(){
     const raw = ocrHintsText || localStorage.getItem(LS.OCRHINT) || '';
     if(!raw){ setPill($('#save-status'),'No OCR text yet','warn'); return; }
@@ -691,7 +679,9 @@
     setPill($('#save-status'),'OCR mapping applied (review/edit)','ok');
   }
 
-  // ---------- save/export ----------
+  // ---------------- Save / Export
+  const csvEsc = v => { const s=String(v??''); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
+  const toNum = v => (v===''||v==null)?'':Number(v);
   function buildCSVs(recs){
     const RH=[
       'ReceiptID','ReceiptDate',
@@ -715,7 +705,8 @@
 
   function saveRecord(){
     const recs=JSON.parse(localStorage.getItem(LS.RECORDS)||'[]');
-    const id=nowId(); const sess=JSON.parse(localStorage.getItem(LS.SESSION)||'{}');
+    const id=Date.now().toString(36);
+    const sess=JSON.parse(localStorage.getItem(LS.SESSION)||'{}');
     const m={
       ReceiptID:id, ReceiptDate:$('#f_date').value||'',
       SellerName:$('#f_seller_name').value||'', SellerTIN:$('#f_seller_tin').value||'', SellerAddress:$('#f_seller_addr').value||'',
@@ -771,7 +762,7 @@
     setPill($('#export-status'),'ZIP exported','ok');
   }
 
-  // ---------- items table ----------
+  // ---------------- Items table
   function addItemRow(item='',qty='',price='',amount=''){
     const tb=$('#items-body'); const idx=tb.children.length+1;
     const tr=document.createElement('tr');
@@ -789,7 +780,7 @@
   function recalcRow(e){ const tr=e.target.closest('tr'); const q=Number(tr.querySelector('.it-qty').value||0); const p=Number(tr.querySelector('.it-price').value||0); tr.querySelector('.it-amount').value=(q*p?(q*p).toFixed(2):''); }
   function renumber(){ $$('#items-body tr').forEach((tr,i)=> tr.children[0].textContent=(i+1)); }
 
-  // ---------- inline viewer + overlay transforms ----------
+  // ---------------- Viewer & overlay transforms
   const viewer={ scale:1, rot:0, ox:0, oy:0,
     apply(){ 
       const t=`rotate(${this.rot}deg) translate(${this.ox}px,${this.oy}px) scale(${this.scale})`;
@@ -818,35 +809,34 @@
   }
   (function wireViewer(){
     const canv=$('#viewer-canvas'); let panning=false,sx=0,sy=0,last=null;
-    canv.addEventListener('wheel',e=>{e.preventDefault(); const v=clamp(Number($('#v-zoom-slider').value)+(e.deltaY<0?10:-10),30,600); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply();},{passive:false});
+    canv.addEventListener('wheel',e=>{e.preventDefault(); const v=Math.max(30,Math.min(600,Number($('#v-zoom-slider').value)+(e.deltaY<0?10:-10))); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply();},{passive:false});
     canv.addEventListener('mousedown',e=>{panning=true;sx=e.clientX;sy=e.clientY;canv.style.cursor='grabbing';});
     window.addEventListener('mouseup',()=>{panning=false;canv.style.cursor='default';});
     window.addEventListener('mousemove',e=>{ if(!panning)return; viewer.ox+=(e.clientX-sx); viewer.oy+=(e.clientY-sy); sx=e.clientX; sy=e.clientY; viewer.apply(); });
     canv.addEventListener('touchstart',e=>{ if(e.touches.length===2){ last=dist(e.touches[0],e.touches[1]); } else { sx=e.touches[0].clientX; sy=e.touches[0].clientY; } },{passive:false});
-    canv.addEventListener('touchmove',e=>{ e.preventDefault(); if(e.touches.length===2&&last!=null){ const d=dist(e.touches[0],e.touches[1]); const v=clamp(Number($('#v-zoom-slider').value)+(d-last)/2,30,600); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); last=d; } else if(e.touches.length===1){ viewer.ox+=(e.touches[0].clientX-sx); viewer.oy+=(e.touches[0].clientY-sy); sx=e.touches[0].clientX; sy=e.touches[0].clientY; viewer.apply(); } },{passive:false});
+    canv.addEventListener('touchmove',e=>{ e.preventDefault(); if(e.touches.length===2&&last!=null){ const d=dist(e.touches[0],e.touches[1]); const v=Math.max(30,Math.min(600,Number($('#v-zoom-slider').value)+(d-last)/2)); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); last=d; } else if(e.touches.length===1){ viewer.ox+=(e.touches[0].clientX-sx); viewer.oy+=(e.touches[0].clientY-sy); sx=e.touches[0].clientX; sy=e.touches[0].clientY; viewer.apply(); } },{passive:false});
     canv.addEventListener('touchend',()=>{ last=null; });
     function dist(a,b){ const dx=a.clientX-b.clientX,dy=a.clientY-b.clientY; return Math.hypot(dx,dy); }
 
     $('#v-zoom-slider').addEventListener('input',e=>{ viewer.scale=Number(e.target.value)/100; viewer.apply(); });
-    $('#v-zoom-in').addEventListener('click',()=>{ const v=clamp(Number($('#v-zoom-slider').value)+10,30,600); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); });
-    $('#v-zoom-out').addEventListener('click',()=>{ const v=clamp(Number($('#v-zoom-slider').value)-10,30,600); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); });
+    $('#v-zoom-in').addEventListener('click',()=>{ const v=Math.max(30,Math.min(600,Number($('#v-zoom-slider').value)+10)); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); });
+    $('#v-zoom-out').addEventListener('click',()=>{ const v=Math.max(30,Math.min(600,Number($('#v-zoom-slider').value)-10)); $('#v-zoom-slider').value=v; viewer.scale=v/100; viewer.apply(); });
     $('#v-1x').addEventListener('click',()=>{ $('#v-zoom-slider').value=100; viewer.scale=1; viewer.ox=0; viewer.oy=0; viewer.apply(); });
-    $('#v-fit').addEventListener('click',()=>{ const img=$('#v-after'); if(!img.naturalHeight) return; const boxH=$('#viewer-canvas').clientHeight; const pct=clamp(Math.round((boxH/img.naturalHeight)*100),30,600); $('#v-zoom-slider').value=pct; viewer.scale=pct/100; viewer.ox=0; viewer.oy=0; viewer.apply(); });
+    $('#v-fit').addEventListener('click',()=>{ const img=$('#v-after'); if(!img.naturalHeight) return; const boxH=$('#viewer-canvas').clientHeight; const pct=Math.max(30,Math.min(600,Math.round((boxH/img.naturalHeight)*100))); $('#v-zoom-slider').value=pct; viewer.scale=pct/100; viewer.ox=0; viewer.oy=0; viewer.apply(); });
     $('#v-rotate').addEventListener('click',()=>{ viewer.rot=(viewer.rot+90)%360; viewer.apply(); const f=uploadedFiles.find(x=>x.id===currentViewId); if(f) f.rotation=viewer.rot; drawOverlay(); });
     $('#v-bright').addEventListener('input',()=>viewer.filters());
     $('#v-contrast').addEventListener('input',()=>viewer.filters());
 
-    // overlay wiring
     $('#chk-overlay')?.addEventListener('change', drawOverlay);
     $('#btn-clear-overlay')?.addEventListener('click', clearOverlay);
   })();
 
-  // ---------- camera ----------
+  // ---------------- Camera
   async function startCamera(){
     try{
       camStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: camFacing }, audio:false });
       $('#cam').srcObject = camStream;
-      setPill($('#cam-status'),'Camera ready','ok');
+      setPill($('#cam-status'],'Camera ready','ok');
     } catch {
       setPill($('#cam-status'),'Camera error (permissions?)','warn');
     }
@@ -854,17 +844,17 @@
   async function switchCamera(){ camFacing=(camFacing==='environment'?'user':'environment'); await stopCamera(); await startCamera(); }
   async function stopCamera(){ if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; $('#cam').srcObject=null; setPill($('#cam-status'),'Camera stopped','ok'); } }
   async function captureFrame(){
-    if(!camStream) return setPill($('#cam-status'),'Start camera first','warn');
+    if(!camStream) return setPill($('#cam-status'],'Start camera first','warn');
     const video=$('#cam'); const c=document.createElement('canvas');
     const maxW=2200; const scale=Math.min(1,maxW/(video.videoWidth||maxW));
     c.width=Math.round((video.videoWidth||1280)*scale); c.height=Math.round((video.videoHeight||720)*scale);
     c.getContext('2d').drawImage(video,0,0,c.width,c.height);
     const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.92));
-    const file=new File([blob],`capture_${nowId()}.jpg`,{type:'image/jpeg'});
+    const file=new File([blob],`capture_${Date.now()}.jpg`,{type:'image/jpeg'});
     await addFile(file); renderThumbs(); showInViewer(uploadedFiles[uploadedFiles.length-1].id); setPill($('#cam-status'),'Captured','ok');
   }
 
-  // ---------- buttons & events ----------
+  // ---------------- Buttons
   $('#btn-run-selftest')?.addEventListener('click', runSelfTest);
   $('#btn-save-settings')?.addEventListener('click', ()=>{ const v=$('#csvUrl').value.trim(); if(!v) return; localStorage.setItem(LS.CSV_URL,v); setPill($('#csv-status'),'Saved','ok'); });
   $('#btn-test-csv')?.addEventListener('click', async ()=>{ const url=$('#csvUrl').value.trim()||localStorage.getItem(LS.CSV_URL); if(!url) return setPill($('#csv-status'),'No URL','warn'); await testCSV(url); });
@@ -895,20 +885,19 @@
   $('#btn-top')?.addEventListener('click', ()=>window.scrollTo({top:0,behavior:'smooth'}));
   $('#btn-jump-step3')?.addEventListener('click', ()=>$('#step3').scrollIntoView({behavior:'smooth'}));
 
-  // Camera buttons
   $('#cam-start')?.addEventListener('click', startCamera);
   $('#cam-switch')?.addEventListener('click', switchCamera);
   $('#cam-stop')?.addEventListener('click', stopCamera);
   $('#cam-capture')?.addEventListener('click', captureFrame);
 
   $('#btn-clear-session')?.addEventListener('click', ()=>{ localStorage.removeItem(LS.SESSION); setPill($('#verify-status'),'Session cleared','ok'); });
-  $('#btn-full-reset')?.addEventListener('click', ()=>{ const keep=localStorage.getItem(LS.CSV_URL); localStorage.clear(); if(keep) localStorage.setItem(LS.CSV_URL,keep); uploadedFiles=[]; $('#thumbs').innerHTML=''; clearOverlay(); setPill($('#verify-status'),'Reset done','ok'); });
+  $('#btn-full-reset')?.addEventListener('click', ()=>{ const keep=localStorage.getItem(LS.CSV_URL); localStorage.clear(); if(keep) localStorage.setItem(LS.CSV_URL,keep); uploadedFiles=[]; $('#thumbs').innerHTML=''; OVERLAY.shapes=[]; drawOverlay(); setPill($('#verify-status'),'Reset done','ok'); });
 
-  // ---------- boot ----------
+  // ---------------- Boot
   (function(){
     const url=localStorage.getItem(LS.CSV_URL)||''; if($('#csvUrl')) $('#csvUrl').value=url;
     runSelfTest();
-    addItemRow();
+    // Prepare one empty row to start
+    const tb=$('#items-body'); if(tb && !tb.children.length){ const tr=document.createElement('tr'); tr.innerHTML='<td>1</td><td><input class="it-name"></td><td><input class="it-qty" type="number" step="0.01"></td><td><input class="it-price" type="number" step="0.01"></td><td><input class="it-amount" type="number" step="0.01"></td><td></td>'; tb.appendChild(tr); }
   })();
-
 })();

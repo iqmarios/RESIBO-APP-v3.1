@@ -1,7 +1,7 @@
-/* Resibo Service Worker — v3.6.0 */
-const CACHE_VERSION = 'resibo-cache-v3.6.0';
+/* Resibo Service Worker — v3.6.1 */
+const CACHE_VERSION = 'resibo-cache-v3.6.1';
 const CORE = [
-  '/', '/index.html?v=3.6.0', '/style.css?v=3.6.0', '/app.js?v=3.6.0',
+  '/', '/index.html?v=3.6.1', '/style.css?v=3.6.1', '/app.js?v=3.6.1',
   '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png',
   '/libs/jszip.min.js','/libs/FileSaver.min.js','/libs/pdf.min.js','/libs/pdf.worker.min.js','/libs/tesseract.min.js','/libs/opencv.js'
 ];
@@ -16,7 +16,7 @@ self.addEventListener('fetch',(e)=>{const u=new URL(e.request.url);if(e.request.
   if(isCSV(u.href)) return e.respondWith(networkFirst(e.request));
   if(/\.(png|jpg|jpeg|webp|gif|bmp|svg|pdf)$/i.test(u.pathname)) return e.respondWith(cacheFirst(e.request));
   if(u.origin===self.location.origin && /\.(js|css)$/.test(u.pathname)) return e.respondWith(cacheFirst(e.request));
-  if(e.request.mode==='navigate'){return e.respondWith((async()=>{const c=await caches.open(CACHE_VERSION);const m=await c.match('/index.html?v=3.6.0');try{const r=await fetch(e.request);return r.ok?r:(m||r)}catch{return m||new Response('<h1>Offline</h1>',{headers:{'Content-Type':'text/html'}})} })())}
+  if(e.request.mode==='navigate'){return e.respondWith((async()=>{const c=await caches.open(CACHE_VERSION);const m=await c.match('/index.html?v=3.6.1');try{const r=await fetch(e.request);return r.ok?r:(m||r)}catch{return m||new Response('<h1>Offline</h1>',{headers:{'Content-Type':'text/html'}})} })())}
   return e.respondWith(cacheFirst(e.request));
 });
 self.addEventListener('message',e=>{if(e.data&&e.data.type==='SKIP_WAITING')self.skipWaiting()});

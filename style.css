@@ -38,7 +38,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #1f2937
 .viewer-toolbar .muted{color:var(--muted);font-size:12px}
 .viewer-canvas{position:relative;overflow:hidden;background:#0b1220;border-radius:12px;border:1px solid #334155;height:520px}
 .viewer-canvas img{position:absolute;top:0;left:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none}
-#v-overlay{position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:auto} /* clickable overlay */
+#v-overlay{position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:auto}
 
 .legend{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
 .legend .lg{display:inline-block;width:12px;height:12px;border-radius:2px;border:1px solid #334155}
@@ -61,7 +61,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #1f2937
   .viewer-canvas{height:420px}
 }
 
-/* focus flash */
+/* focus flash on inputs when overlay clicked */
 .flash { box-shadow: 0 0 0 2px #2563eb; transition: box-shadow .2s ease; }
 .flash-anim { animation: flashfade 1.2s ease 1; }
 @keyframes flashfade {

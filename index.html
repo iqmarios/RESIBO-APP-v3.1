@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Resibo App v3.6.0 — Clickable Overlay</title>
+  <title>Resibo App v3.6.1 — Visual Overlay + Tiny Print OCR</title>
 
-  <link rel="manifest" href="manifest.json?v=3.6.0" />
+  <link rel="manifest" href="manifest.json?v=3.6.1" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="style.css?v=3.6.1" />
 
-  <link rel="stylesheet" href="style.css?v=3.6.0" />
-
-  <!-- libs -->
+  <!-- Core libs -->
   <script defer src="libs/jszip.min.js"></script>
   <script defer src="libs/FileSaver.min.js"></script>
   <script defer src="libs/pdf.min.js"></script>
   <script>
+    // Use worker if present; fall back to single-thread mode if not.
     window.addEventListener('load', async () => {
       if (window.pdfjsLib) {
         try {
@@ -28,12 +28,11 @@
   </script>
   <script defer src="libs/tesseract.min.js"></script>
   <script defer src="libs/opencv.js"></script>
-
-  <script defer src="app.js?v=3.6.0"></script>
+  <script defer src="app.js?v=3.6.1"></script>
 </head>
 <body>
 <header class="top">
-  <h1>Resibo App <span class="chip">v3.6.0</span></h1>
+  <h1>Resibo App <span class="chip">v3.6.1</span></h1>
   <nav class="floating">
     <button id="btn-top" class="fab">🏠 Top</button>
     <button id="btn-jump-step3" class="fab">⬇ Review</button>
@@ -41,6 +40,7 @@
 </header>
 
 <main class="wrap">
+
   <!-- SETTINGS -->
   <section class="card">
     <h2>Settings</h2>
@@ -73,13 +73,14 @@
   <!-- STEP 2 -->
   <section class="card" id="step2">
     <h2>Step 2 — Capture & OCR</h2>
-
     <div class="row">
       <input id="file-input" type="file" accept="image/*,application/pdf" multiple />
       <button id="btn-preprocess-basic" class="btn">Preprocess (Basic)</button>
       <button id="btn-preprocess-strong" class="btn">Strong Preprocess (Handwriting)</button>
-      <button id="btn-preprocess-ultra" class="btn">Ultra Preprocess (Handwriting+)</button>
-      <label class="toggle"><input id="chk-smallprint" type="checkbox" /> <span>Boost Small Print</span></label>
+      <button id="btn-preprocess-ultra" class="btn">Ultra Preprocess (Tiny Print + Handwriting)</button>
+    </div>
+    <div class="row">
+      <label class="toggle"><input id="chk-smallprint" type="checkbox" checked /> <span>Boost Small Print</span></label>
       <button id="btn-run-ocr" class="btn primary">Run OCR</button>
       <span id="ocr-status" class="pill">Idle</span>
     </div>
@@ -93,9 +94,7 @@
         <button id="cam-stop" class="btn danger">Stop</button>
         <span id="cam-status" class="pill">Camera idle</span>
       </div>
-      <div class="cam-box">
-        <video id="cam" autoplay playsinline muted></video>
-      </div>
+      <div class="cam-box"><video id="cam" autoplay playsinline muted></video></div>
     </div>
 
     <label class="toggle">
@@ -110,7 +109,7 @@
   <section class="card" id="step3">
     <h2>Step 3 — Manual Review & Edit</h2>
 
-    <!-- Inline Large Viewer -->
+    <!-- Inline Large Viewer with Overlay -->
     <div id="viewer" class="viewer">
       <div class="viewer-toolbar">
         <button id="v-fit" class="btn xs">Fit</button>
@@ -133,7 +132,6 @@
           <i class="lg lg-amt"></i> Amount
         </span>
         <button id="btn-clear-overlay" class="btn xs">Clear Overlay</button>
-
         <span class="muted">Drag to pan • Wheel/Pinch to zoom</span>
       </div>
 
@@ -150,7 +148,7 @@
       </div>
     </div>
 
-    <!-- Form (under the big image) -->
+    <!-- Form -->
     <div class="grid3">
       <div><label>Receipt Date (YYYY-MM-DD)</label><input id="f_date" placeholder="2025-01-31"></div>
       <div><label>Document Type</label>
@@ -232,12 +230,13 @@
     <div class="row"><button id="btn-run-selftest" class="btn">Run Self-Test</button></div>
     <div id="selftest-results" class="list"></div>
   </section>
+
 </main>
 
 <footer class="foot">© 2025 Resibo — Privacy-first. All processing happens locally.</footer>
 
 <script>
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=3.6.0');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=3.6.1');
 </script>
 </body>
 </html>

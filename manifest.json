@@ -1,10 +1,10 @@
 {
   "name": "Resibo App",
   "short_name": "Resibo",
-  "description": "Privacy-first receipt capture with small-print OCR, layout table parsing, and clickable visual overlay — all offline.",
+  "description": "Privacy-first receipt capture with tiny-print OCR, handwriting prep, layout parsing and clickable visual overlay — all offline.",
   "lang": "en",
   "dir": "ltr",
-  "start_url": "/index.html?v=3.6.0",
+  "start_url": "/index.html?v=3.6.1",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
