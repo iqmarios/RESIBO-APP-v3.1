@@ -1,7 +1,9 @@
-/* Resibo App v3.1.6 — Handwriting Build
+/* Resibo App v3.1.7 — Handwriting Build + Zoom/Compare
  * - Local/offline PWA with verification via Issued Codes CSV (published URL)
  * - Capture/upload (images/PDF) → preprocess → OCR (Tesseract) → manual review
  * - Strong OpenCV pipeline for handwriting (CLAHE, median, deskew, adaptive thr)
+ * - Zoom & pan viewer + Before/After slider (original vs processed)
+ * - OCR preview (snippet + confidence) beneath each thumbnail
  * - Expanded schema + line items
  * - Export: Receipts.csv + LineItems.csv; ZIP with images + CSV + JSON
  */
@@ -11,7 +13,7 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
 
   // ---- Storage keys / version ----
-  const APP_VERSION = '3.1.6';
+  const APP_VERSION = '3.1.7';
   const LS = {
     CSV_URL: 'resibo_csv_url',
     SESSION: 'resibo_session',   // {code,name,tin,gmail,expiry}
@@ -21,8 +23,8 @@
 
   // ---- State ----
   let CSV_ROWS = [];               // [{code,name,tin,gmail,status,expiry_date}]
-  let uploadedFiles = [];          // [{id, name, file, urlOriginal, urlProcessed, rotation}]
-  let currentImageId = null;       // for modal
+  let uploadedFiles = [];          // [{id, name, file, urlOriginal, urlProcessed, rotation, ocr:{text,conf}}]
+  let currentFileId = null;        // for modal
   let rotationMap = {};            // id -> deg
   let ocrHintsText = '';           // latest extracted text
 
@@ -37,6 +39,7 @@
   };
 
   const notice = (el, text, cls='') => {
+    if (!el) return;
     el.textContent = text;
     el.className = 'pill ' + (cls || (text.toLowerCase().includes('ok')?'ok':'warn'));
   };
@@ -54,9 +57,9 @@
     { name: 'OpenCV', fn: () => !!window.cv && !!cv.imread },
     { name: 'Cache/Version', fn: () => true },
   ];
-
   function runSelfTest() {
     const host = $('#selftest-results');
+    if (!host) return;
     host.innerHTML = '';
     selfTests.forEach(t => {
       const ok = !!t.fn();
@@ -82,7 +85,6 @@
       return [];
     }
   }
-
   function parseCSV(text) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (!lines.length) return [];
@@ -109,9 +111,7 @@
     }
     return rows;
   }
-
   function splitCSVLine(line) {
-    // simple CSV splitter w/ quotes
     const out = [];
     let cur = '', q = false;
     for (let i=0;i<line.length;i++){
@@ -143,29 +143,20 @@
     const csvUrl = $('#csvUrl').value.trim() || localStorage.getItem(LS.CSV_URL);
     if (!csvUrl) { notice(status, 'CSV URL missing', 'warn'); return; }
 
-    if (!CSV_ROWS.length) {
-      await testCSV(csvUrl);
-    }
+    if (!CSV_ROWS.length) await testCSV(csvUrl);
 
     const hit = CSV_ROWS.find(r =>
       (r.code||'').toLowerCase() === code.toLowerCase() &&
       (r.gmail||'').toLowerCase() === gmail.toLowerCase()
     );
 
-    if (!hit) {
-      notice(status, 'No matching ACTIVE record with a valid EXPIRY_DATE.', 'warn');
-      return;
-    }
+    if (!hit) return notice(status, 'No matching ACTIVE record with a valid EXPIRY_DATE.', 'warn');
 
-    // status + expiry date check (YYYY-MM-DD accepted)
     const active = (hit.status||'').toLowerCase() === 'active';
     const today = new Date().toISOString().slice(0,10);
     const valid = (hit.expiry_date||'') >= today;
 
-    if (!active || !valid) {
-      notice(status, 'No matching ACTIVE record with a valid EXPIRY_DATE.', 'warn');
-      return;
-    }
+    if (!active || !valid) return notice(status, 'No matching ACTIVE record with a valid EXPIRY_DATE.', 'warn');
 
     const sess = { code, name, tin, gmail, expiry: hit.expiry_date };
     saveJSON(LS.SESSION, sess);
@@ -176,11 +167,8 @@
   $('#file-input')?.addEventListener('change', async e => {
     const files = Array.from(e.target.files||[]);
     for (const file of files) {
-      if (file.type === 'application/pdf') {
-        await importPDFFiles(file);
-      } else {
-        await addFile(file);
-      }
+      if (file.type === 'application/pdf') await importPDFFiles(file);
+      else await addFile(file);
     }
     renderThumbs();
   });
@@ -201,15 +189,15 @@
       await addFile(f);
     }
   }
-
   async function addFile(file) {
     const id = nowId() + '_' + Math.random().toString(36).slice(2,7);
     const urlOriginal = URL.createObjectURL(file);
-    uploadedFiles.push({ id, name: file.name, file, urlOriginal, urlProcessed: null, rotation: 0 });
+    uploadedFiles.push({ id, name: file.name, file, urlOriginal, urlProcessed: null, rotation: 0, ocr: null });
   }
 
   function renderThumbs() {
     const host = $('#thumbs');
+    if (!host) return;
     host.innerHTML = '';
     uploadedFiles.forEach(f => {
       const div = document.createElement('div');
@@ -217,10 +205,12 @@
       const img = document.createElement('img');
       img.src = $('#toggle-before-after').checked && f.urlProcessed ? f.urlOriginal : (f.urlProcessed || f.urlOriginal);
       img.alt = f.name;
-      img.addEventListener('click', () => openModal(f.id, img.src));
+      img.addEventListener('click', () => openModal(f.id));
       const cap = document.createElement('div');
       cap.className = 'cap';
-      cap.textContent = f.name;
+      const conf = f.ocr?.conf != null ? ` • conf ${Math.round(f.ocr.conf)}%` : '';
+      const preview = f.ocr?.text ? ` — “${f.ocr.text.slice(0,120).replace(/\s+/g,' ')}${f.ocr.text.length>120?'…':''}”` : '';
+      cap.textContent = `${f.name}${conf}${preview}`;
       div.appendChild(img); div.appendChild(cap);
       host.appendChild(div);
     });
@@ -232,12 +222,10 @@
     if (!window.cv) return tipOCR('OpenCV not ready');
     await processAllImages(img => basicPipeline(img));
   }
-
   async function preprocessStrong() {
     if (!window.cv) return tipOCR('OpenCV not ready');
     await processAllImages(img => strongPipeline(img));
   }
-
   async function processAllImages(pipeline) {
     const s = $('#ocr-status');
     notice(s, 'Preprocessing...');
@@ -254,7 +242,6 @@
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // draw to canvas to pass to cv
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const w = img.naturalWidth, h = img.naturalHeight;
@@ -262,31 +249,26 @@
         ctx.drawImage(img,0,0);
         if (!window.cv) return res(url);
         const src = cv.imread(canvas);
+        let base = src;
         if (rotateDeg) {
-          const rot = rotateMat(src, rotateDeg);
+          base = rotateMat(src, rotateDeg);
           src.delete();
-          const out = pipeline(rot);
-          rot.delete();
-          res(toDataURL(out));
-          out.delete();
-        } else {
-          const out = pipeline(src);
-          src.delete();
-          res(toDataURL(out));
-          out.delete();
         }
+        const out = pipeline(base);
+        base.delete();
+        const data = toDataURL(out);
+        out.delete();
+        res(data);
       };
       img.onerror = () => res(url);
       img.src = url;
     });
   }
-
   function toDataURL(mat) {
     const c = document.createElement('canvas');
     cv.imshow(c, mat);
     return c.toDataURL('image/png', 0.95);
   }
-
   function rotateMat(src, deg) {
     const dst = new cv.Mat();
     const center = new cv.Point(src.cols/2, src.rows/2);
@@ -296,57 +278,35 @@
     M.delete();
     return dst;
   }
-
   function basicPipeline(src) {
-    // gray → Otsu → (optional invert if background dark)
     let gray = new cv.Mat(); let out = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.threshold(gray, out, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
     gray.delete();
     return out;
   }
-
   function strongPipeline(src) {
-    // 1) Gray
     let gray = new cv.Mat(); cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-    // 2) Equalize + CLAHE
     cv.equalizeHist(gray, gray);
     const clahe = new cv.CLAHE(2.0, new cv.Size(8,8));
     clahe.apply(gray, gray); clahe.delete();
-
-    // 3) Noise removal
     cv.medianBlur(gray, gray, 3);
-
-    // 4) Deskew (estimate angle via Hough)
     const angle = estimateSkewAngle(gray);
     let deskewed = rotateMat(gray, -angle);
-
-    // 5) Adaptive threshold (Sauvola/Niblack not built-in → use adaptiveMean)
     let bin = new cv.Mat();
     cv.adaptiveThreshold(deskewed, bin, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY, 35, 10);
-
-    // Optional: line removal (simple morphology)
-    // (kept minimal for speed; can be toggled later if needed)
-
     gray.delete(); deskewed.delete();
     return bin;
   }
-
   function estimateSkewAngle(gray) {
-    // Edges → Hough lines → median angle
     let edges = new cv.Mat(); cv.Canny(gray, edges, 50, 150);
     let lines = new cv.Mat();
     cv.HoughLines(edges, lines, 1, Math.PI/180, 150);
     edges.delete();
-
     if (!lines.rows) { lines.delete(); return 0; }
-
     const angles = [];
     for (let i=0;i<lines.rows;i++){
-      const rho = lines.data32F[i*2];
       const theta = lines.data32F[i*2+1];
-      // convert to degrees around horizontal
       let deg = (theta*180/Math.PI);
       if (deg>90) deg -= 180;
       angles.push(deg);
@@ -356,10 +316,7 @@
     const mid = Math.floor(angles.length/2);
     return angles[mid] || 0;
   }
-
-  function tipOCR(msg) {
-    notice($('#ocr-status'), msg, 'warn');
-  }
+  function tipOCR(msg) { notice($('#ocr-status'), msg, 'warn'); }
 
   // ---- OCR ----
   async function runOCR() {
@@ -370,36 +327,37 @@
     let combined = '';
     for (const f of uploadedFiles) {
       const src = ($('#toggle-before-after').checked || !f.urlProcessed) ? f.urlOriginal : (f.urlProcessed || f.urlOriginal);
-      const txt = await doTesseract(src);
-      combined += '\n' + txt;
+      const out = await doTesseract(src);
+      const conf = out.conf ?? (out.wordsConf?.length ? (out.wordsConf.reduce((a,b)=>a+b,0)/out.wordsConf.length) : 0);
+      f.ocr = { text: out.text || '', conf: conf || 0 };
+      combined += '\n' + (out.text||'');
     }
     ocrHintsText = combined.trim();
     localStorage.setItem(LS.OCRHINT, ocrHintsText);
     notice($('#ocr-status'), 'OCR done', 'ok');
+    renderThumbs();
   }
-
   async function doTesseract(url) {
-    const { data } = await Tesseract.recognize(url, 'eng', {
-      tessedit_char_whitelist: undefined, // allow general OCR
-    });
-    return data.text || '';
+    const { data } = await Tesseract.recognize(url, 'eng', {});
+    // Tesseract.js exposes data.confidence (0-100)
+    const wordsConf = (data.words||[]).map(w=>w.confidence||0);
+    return { text: data.text || '', conf: data.confidence ?? 0, wordsConf };
   }
 
-  // ---- Apply OCR Hints → Fields (simple heuristics, non-destructive) ----
+  // ---- Apply OCR Hints → Fields (simple heuristics) ----
   function applyOCRToFields() {
     const t = ocrHintsText || localStorage.getItem(LS.OCRHINT) || '';
     if (!t) { $('#save-status').textContent = 'No OCR hints yet'; return; }
 
-    // Very light heuristics (keep manual review as the source of truth)
-    // Try date yyyy-mm-dd or dd/mm/yyyy
     const iso = t.match(/\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.](0[1-9]|[12]\d|3[01])\b/);
     if (iso) $('#f_date').value = iso[0].replace(/[\.\/]/g,'-');
+
     const inv = t.match(/\b(SI|OR)[- ]?\d{3,}\b/i);
     if (inv) {
       $('#f_doc_type').value = inv[0].toUpperCase().startsWith('OR') ? 'Official Receipt' : 'Sales Invoice';
       $('#f_doc_no').value = inv[0].toUpperCase();
     }
-    // Amounts: pick the largest money-like number as Total
+
     const nums = Array.from(t.matchAll(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?\b/g)).map(m=>Number(m[0].replace(/[,\s]/g,'')));
     if (nums.length) {
       const max = Math.max(...nums);
@@ -489,7 +447,6 @@
       LineAmount: toNum(tr.querySelector('.it-amount').value),
     }));
 
-    // Keep only filenames in manifest (images included separately in ZIP export)
     const images = uploadedFiles.map(f => ({
       ReceiptID: id,
       name: f.name,
@@ -508,13 +465,10 @@
     if (!recs.length) return notice($('#export-status'), 'No records', 'warn');
 
     const { receiptsCSV, itemsCSV } = buildCSVs(recs);
-
-    // Two files → trigger download
     downloadBlob(new Blob([receiptsCSV], {type:'text/csv'}), 'Receipts.csv');
     downloadBlob(new Blob([itemsCSV], {type:'text/csv'}), 'LineItems.csv');
     notice($('#export-status'), 'CSV exported', 'ok');
   }
-
   function buildCSVs(recs) {
     const receiptHeaders = [
       'ReceiptID','ReceiptDate',
@@ -537,36 +491,28 @@
         itemsRows.push(liHeaders.map(h => csvEsc(it[h] ?? '')).join(','));
       }
     }
-
     return { receiptsCSV: receiptsRows.join('\n'), itemsCSV: itemsRows.join('\n') };
   }
-
   function csvEsc(v) {
     const s = String(v ?? '');
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
     return s;
   }
-
   async function exportZIP() {
     const recs = loadJSON(LS.RECORDS, []);
     if (!recs.length) return notice($('#export-status'), 'No records', 'warn');
     const zip = new JSZip();
 
-    // CSVs
     const { receiptsCSV, itemsCSV } = buildCSVs(recs);
     zip.file('Receipts.csv', receiptsCSV);
     zip.file('LineItems.csv', itemsCSV);
 
-    // JSON manifest
     zip.file('manifest.json', JSON.stringify({ app: 'Resibo', version: APP_VERSION, exportedAt: new Date().toISOString(), count: recs.length }, null, 2));
 
-    // Images (original + processed)
     const imgFolder = zip.folder('images');
     for (const f of uploadedFiles) {
-      // Original
       const blobOrig = await dataUrlToBlob(f.urlOriginal);
       imgFolder.file(f.name, blobOrig);
-      // Processed (if available)
       if (f.urlProcessed) {
         const ext = f.name.toLowerCase().endsWith('.png') ? '' : '.png';
         const blobProc = await dataUrlToBlob(f.urlProcessed);
@@ -578,21 +524,15 @@
     saveAs(out, `Resibo_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.zip`);
     notice($('#export-status'), 'ZIP exported', 'ok');
   }
-
-  function dataUrlToBlob(dataUrl) {
-    return fetch(dataUrl).then(r => r.blob());
-  }
+  function dataUrlToBlob(dataUrl) { return fetch(dataUrl).then(r => r.blob()); }
   function downloadBlob(blob, name) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    a.download = name; a.click(); URL.revokeObjectURL(a.href);
   }
 
   // ---- Cleanup ----
   function clearSession() {
-    // keep CSV URL; keep records
     localStorage.removeItem(LS.SESSION);
     notice($('#verify-status'), 'Session cleared', 'ok');
   }
@@ -605,47 +545,162 @@
     notice($('#verify-status'), 'Reset done', 'ok');
   }
 
-  // ---- Modal Image Viewer ----
-  function openModal(id, src) {
-    currentImageId = id;
+  // ===========================================================================
+  // Modal Viewer: Zoom, Pan, Rotate, Bright/Contrast, Before/After Slider
+  // ===========================================================================
+  function openModal(id) {
+    currentFileId = id;
     const f = uploadedFiles.find(x=>x.id===id);
     rotationMap[id] = rotationMap[id] || (f?.rotation || 0);
-    const img = $('#modal-img');
-    img.src = src;
-    img.style.transform = `rotate(${rotationMap[id]}deg) scale(1)`;
-    img.style.filter = 'brightness(1) contrast(1)';
+
+    // Build dynamic compare UI inside modal
+    const modal = $('#img-modal');
+    const toolbar = modal.querySelector('.modal-toolbar');
+    const body = modal.querySelector('.modal-body');
+    body.innerHTML = ''; // reset
+
+    // Container
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.style.width = 'max-content';
+    wrap.style.height = 'max-content';
+    wrap.style.cursor = 'grab';
+    body.appendChild(wrap);
+
+    // Base (original) image
+    const imgBefore = new Image();
+    imgBefore.id = 'modal-img-before';
+    imgBefore.src = f?.urlOriginal || '';
+    imgBefore.style.transformOrigin = '0 0';
+    imgBefore.style.userSelect = 'none';
+    imgBefore.draggable = false;
+
+    // Top (after) image
+    const imgAfter = new Image();
+    imgAfter.id = 'modal-img-after';
+    imgAfter.src = (f?.urlProcessed || f?.urlOriginal || '');
+    imgAfter.style.position = 'absolute';
+    imgAfter.style.left = '0';
+    imgAfter.style.top = '0';
+    imgAfter.style.transformOrigin = '0 0';
+    imgAfter.style.userSelect = 'none';
+    imgAfter.draggable = false;
+
+    // Clip for compare
+    imgAfter.style.clipPath = 'inset(0 0 0 50%)'; // half reveal by default
+
+    wrap.appendChild(imgBefore);
+    wrap.appendChild(imgAfter);
+
+    // Compare slider in toolbar (create if not exists)
+    let slider = $('#compare-slider');
+    if (!slider) {
+      slider = document.createElement('input');
+      slider.type = 'range'; slider.id = 'compare-slider';
+      slider.min = '0'; slider.max = '100'; slider.value = '50';
+      slider.title = 'Before/After';
+      slider.style.width = '180px';
+      toolbar.insertBefore(slider, $('#btn-close-modal'));
+    }
+
+    // Brightness/Contrast apply to BOTH
+    const applyFilters = ()=>{
+      const bs = Number($('#range-bright').value||100)/100;
+      const cs = Number($('#range-contrast').value||100)/100;
+      imgBefore.style.filter = `brightness(${bs}) contrast(${cs})`;
+      imgAfter.style.filter  = `brightness(${bs}) contrast(${cs})`;
+    };
+
+    // Rotation + Scale + Pan state
+    let scale = 1, originX = 0, originY = 0, isPanning = false, startX=0, startY=0;
+    const applyTransform = ()=>{
+      const rot = rotationMap[id] || 0;
+      const t = `rotate(${rot}deg) translate(${originX}px, ${originY}px) scale(${scale})`;
+      imgBefore.style.transform = t;
+      imgAfter .style.transform = t;
+    };
+
+    // Init
     $('#range-bright').value = 100; $('#range-contrast').value = 100;
+    applyFilters(); applyTransform();
+
+    // Events: compare slider
+    slider.oninput = (e)=>{
+      const val = Number(e.target.value);
+      const pct = clamp(val, 0, 100);
+      // Clip left side to show "after" progressively
+      const leftClip = (100-pct);
+      imgAfter.style.clipPath = `inset(0 0 0 ${leftClip}%)`;
+    };
+
+    // Events: wheel zoom
+    wrap.addEventListener('wheel', (e)=>{
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      scale = clamp(scale + delta, 0.3, 6);
+      applyTransform();
+    }, { passive:false });
+
+    // Mouse pan
+    wrap.addEventListener('mousedown', (e)=>{ isPanning=true; wrap.style.cursor='grabbing'; startX=e.clientX; startY=e.clientY; });
+    window.addEventListener('mouseup', ()=>{ isPanning=false; wrap.style.cursor='grab'; });
+    window.addEventListener('mousemove', (e)=>{
+      if(!isPanning) return;
+      originX += (e.clientX - startX);
+      originY += (e.clientY - startY);
+      startX = e.clientX; startY = e.clientY;
+      applyTransform();
+    });
+
+    // Touch pinch + pan
+    let lastDist = null;
+    wrap.addEventListener('touchstart', (e)=>{
+      if (e.touches.length===2) {
+        lastDist = touchDist(e.touches[0], e.touches[1]);
+      } else if (e.touches.length===1) {
+        startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+      }
+    }, {passive:false});
+    wrap.addEventListener('touchmove', (e)=>{
+      e.preventDefault();
+      if (e.touches.length===2 && lastDist!=null) {
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const delta = (d - lastDist)/200;
+        scale = clamp(scale + delta, 0.3, 6);
+        lastDist = d;
+        applyTransform();
+      } else if (e.touches.length===1) {
+        const x = e.touches[0].clientX, y = e.touches[0].clientY;
+        originX += (x - startX); originY += (y - startY);
+        startX = x; startY = y;
+        applyTransform();
+      }
+    }, {passive:false});
+    wrap.addEventListener('touchend', ()=>{ lastDist=null; });
+
+    function touchDist(a,b){ const dx=a.clientX-b.clientX, dy=a.clientY-b.clientY; return Math.hypot(dx,dy); }
+
+    // Hook existing toolbar controls
+    $('#btn-zoom-1')?.addEventListener('click', ()=>{
+      scale = 1; originX = 0; originY = 0; applyTransform();
+    }, { once: true }); // once per open
+    $('#btn-rotate')?.addEventListener('click', ()=>{
+      rotationMap[id] = (rotationMap[id] + 90) % 360;
+      const f2 = uploadedFiles.find(x=>x.id===id);
+      if (f2) f2.rotation = rotationMap[id];
+      applyTransform();
+    }, { once: true });
+
+    $('#range-bright')?.addEventListener('input', applyFilters, { once: true });
+    $('#range-contrast')?.addEventListener('input', applyFilters, { once: true });
+
+    $('#btn-close-modal')?.addEventListener('click', closeModal, { once: true });
+
+    // Open
     $('#img-modal').classList.add('open');
   }
-  function closeModal(){ $('#img-modal').classList.remove('open'); currentImageId=null; }
 
-  $('#btn-zoom-1')?.addEventListener('click', ()=>{
-    const img = $('#modal-img');
-    img.style.transform = img.style.transform.replace(/scale\([^\)]*\)/,'scale(1)');
-  });
-  $('#btn-rotate')?.addEventListener('click', ()=>{
-    if (!currentImageId) return;
-    rotationMap[currentImageId] = (rotationMap[currentImageId] + 90) % 360;
-    const img = $('#modal-img');
-    img.style.transform = `rotate(${rotationMap[currentImageId]}deg) scale(1)`;
-    // persist rotation for file (used by preprocess)
-    const f = uploadedFiles.find(x=>x.id===currentImageId);
-    if (f) f.rotation = rotationMap[currentImageId];
-  });
-  $('#range-bright')?.addEventListener('input', e=>{
-    const v = clamp(Number(e.target.value)/100, 0.5, 2.0);
-    const img = $('#modal-img');
-    const cs = Number($('#range-contrast').value)/100;
-    img.style.filter = `brightness(${v}) contrast(${cs})`;
-  });
-  $('#range-contrast')?.addEventListener('input', e=>{
-    const v = clamp(Number(e.target.value)/100, 0.5, 2.0);
-    const img = $('#modal-img');
-    const bs = Number($('#range-bright').value)/100;
-    img.style.filter = `brightness(${bs}) contrast(${v})`;
-  });
-  $('#btn-close-modal')?.addEventListener('click', closeModal);
-  $('#img-modal')?.addEventListener('click', (e)=>{ if(e.target.id==='img-modal') closeModal(); });
+  function closeModal(){ $('#img-modal').classList.remove('open'); currentFileId=null; }
 
   // ---- Wire UI ----
   $('#btn-run-selftest')?.addEventListener('click', runSelfTest);
@@ -676,14 +731,10 @@
 
   // ---- Boot ----
   (function boot(){
-    // Fill settings
     const url = localStorage.getItem(LS.CSV_URL) || '';
-    $('#csvUrl').value = url;
-
+    if ($('#csvUrl')) $('#csvUrl').value = url;
     runSelfTest();
-
-    // Create one default line row
-    addItemRow();
+    addItemRow(); // one default row
   })();
 
 })();
