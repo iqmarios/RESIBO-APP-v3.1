@@ -1,9 +1,9 @@
-/* Resibo App v3.6.1 — Tiny print OCR + clickable overlay */
+/* Resibo App v3.6.1a — Tiny print OCR + clickable overlay + Verify hotfix */
 (() => {
   const $  = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
 
-  const APP_VERSION = '3.6.1';
+  const APP_VERSION = '3.6.1a';
   const LS = { CSV_URL:'resibo_csv_url', SESSION:'resibo_session', RECORDS:'resibo_records', OCRHINT:'resibo_ocr_hint' };
 
   let CSV_ROWS = [];
@@ -82,27 +82,76 @@
       CSV_ROWS = parseCSV(text);
       setPill($('#csv-status'),`CSV fetched (${CSV_ROWS.length} rows)`,'ok');
       return true;
-    }catch{
+    }catch(e){
+      console.error(e);
       setPill($('#csv-status'),'Fetch failed','warn'); return false;
     }
   }
-  async function verify(){
-    const code=$('#acc_code').value.trim();
-    const name=$('#acc_name').value.trim();
-    const tin=$('#acc_tin').value.trim();
-    const gmail=$('#acc_gmail').value.trim();
-    const url=$('#csvUrl').value.trim()||localStorage.getItem(LS.CSV_URL);
-    if(!url){ setPill($('#verify-status'),'CSV URL missing','warn'); return; }
-    localStorage.setItem(LS.CSV_URL,url);
-    if(!CSV_ROWS.length) await testCSV(url);
-    const hit=CSV_ROWS.find(r=>(r.code||'').toLowerCase()===code.toLowerCase() && (r.gmail||'').toLowerCase()===gmail.toLowerCase());
-    const active=(hit?.status||'').toLowerCase()==='active';
-    const today=new Date().toISOString().slice(0,10);
-    const valid=(hit?.expiry_date||'')>=today;
-    if(!hit||!active||!valid){ setPill($('#verify-status'),'No matching ACTIVE record with valid EXPIRY_DATE','warn'); return; }
-    localStorage.setItem(LS.SESSION, JSON.stringify({code,name,tin,gmail,expiry:hit.expiry_date}));
-    setPill($('#verify-status'),'Verification success. Session stored for 7 days.','ok');
-    $('#step2').scrollIntoView({behavior:'smooth'});
+
+  // ==== VERIFY (v3.6.1a) with clear error messages ====
+  async function handleVerify() {
+    const code  = $('#acc_code').value.trim();
+    const name  = $('#acc_name').value.trim();
+    const tin   = $('#acc_tin').value.trim();
+    const gmail = $('#acc_gmail').value.trim();
+    const urlEl = $('#csvUrl');
+    const url   = (urlEl && urlEl.value.trim()) || localStorage.getItem(LS.CSV_URL) || '';
+    const set = (msg, kind='warn') => setPill($('#verify-status'), msg, kind);
+
+    if (!url) { set('CSV URL missing. Paste your Google Sheets publish-to-web CSV, then Save → Test CSV.'); return; }
+
+    localStorage.setItem(LS.CSV_URL, url);
+
+    let text = '';
+    try {
+      const res = await fetch(url, { cache:'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      text = await res.text();
+    } catch (e) {
+      set(`Cannot fetch CSV (${e.message}). Ensure it is "Published to the web" and link ends with output=csv.`); return;
+    }
+
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) { set('CSV is empty.'); return; }
+
+    const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+    const need = ['code','name','tin','gmail','status','expiry_date'];
+    const missing = need.filter(h=>!headers.includes(h));
+    if (missing.length) { set(`CSV headers missing: ${missing.join(', ')}`); return; }
+    const idx = h => headers.indexOf(h);
+
+    const rows = lines.slice(1).map(row=>{
+      const cols = splitCSVLine(row);
+      return {
+        code: (cols[idx('code')]||'').trim(),
+        name: (cols[idx('name')]||'').trim(),
+        tin:  (cols[idx('tin')]||'').trim(),
+        gmail:(cols[idx('gmail')]||'').trim(),
+        status:(cols[idx('status')]||'').trim(),
+        expiry_date:(cols[idx('expiry_date')]||'').trim()
+      };
+    });
+
+    const normTin = s => (s||'').replace(/[\s-]/g,'');
+    const today = new Date().toISOString().slice(0,10);
+
+    const record = rows.find(r =>
+      (r.code||'').toLowerCase() === code.toLowerCase() &&
+      (r.gmail||'').toLowerCase() === gmail.toLowerCase()
+    );
+
+    if (!record) { set('No matching record (code + gmail) found.'); return; }
+    if ((record.status||'').toLowerCase() !== 'active') { set(`Found record but status is "${record.status}". Set to ACTIVE.`); return; }
+    if ((record.expiry_date||'') < today) { set(`Record expired on ${record.expiry_date}.`); return; }
+    if (normTin(record.tin) !== normTin(tin)) { set('Record found, but TIN mismatch. Check dashes/spaces.'); return; }
+
+    localStorage.setItem(LS.SESSION, JSON.stringify({
+      code, name, tin, gmail,
+      expiry: record.expiry_date,
+      savedAt: new Date().toISOString()
+    }));
+    set('Verification success. Session stored for 7 days.','ok');
+    $('#step2').scrollIntoView({ behavior:'smooth' });
   }
 
   // ---------------- Upload / PDF
@@ -255,7 +304,7 @@
 
     // Tesseract tuned for small print
     const opts = {
-      tessedit_pageseg_mode: 6,  // Assume a block of text
+      tessedit_pageseg_mode: 6,
       preserve_interword_spaces: 1
     };
 
@@ -825,8 +874,8 @@
     $('#v-fit').addEventListener('click',()=>{ const img=$('#v-after'); if(!img.naturalHeight) return; const boxH=$('#viewer-canvas').clientHeight; const pct=Math.max(30,Math.min(600,Math.round((boxH/img.naturalHeight)*100))); $('#v-zoom-slider').value=pct; viewer.scale=pct/100; viewer.ox=0; viewer.oy=0; viewer.apply(); });
     $('#v-rotate').addEventListener('click',()=>{ viewer.rot=(viewer.rot+90)%360; viewer.apply(); const f=uploadedFiles.find(x=>x.id===currentViewId); if(f) f.rotation=viewer.rot; drawOverlay(); });
     $('#v-bright').addEventListener('input',()=>viewer.filters());
-    $('#v-contrast').addEventListener('input',()=>viewer.filters());
 
+    $('#v-contrast').addEventListener('input',()=>viewer.filters());
     $('#chk-overlay')?.addEventListener('change', drawOverlay);
     $('#btn-clear-overlay')?.addEventListener('click', clearOverlay);
   })();
@@ -844,7 +893,7 @@
   async function switchCamera(){ camFacing=(camFacing==='environment'?'user':'environment'); await stopCamera(); await startCamera(); }
   async function stopCamera(){ if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; $('#cam').srcObject=null; setPill($('#cam-status'),'Camera stopped','ok'); } }
   async function captureFrame(){
-    if(!camStream) return setPill($('#cam-status'],'Start camera first','warn');
+    if(!camStream) return setPill($('#cam-status'),'Start camera first','warn');
     const video=$('#cam'); const c=document.createElement('canvas');
     const maxW=2200; const scale=Math.min(1,maxW/(video.videoWidth||maxW));
     c.width=Math.round((video.videoWidth||1280)*scale); c.height=Math.round((video.videoHeight||720)*scale);
@@ -858,7 +907,7 @@
   $('#btn-run-selftest')?.addEventListener('click', runSelfTest);
   $('#btn-save-settings')?.addEventListener('click', ()=>{ const v=$('#csvUrl').value.trim(); if(!v) return; localStorage.setItem(LS.CSV_URL,v); setPill($('#csv-status'),'Saved','ok'); });
   $('#btn-test-csv')?.addEventListener('click', async ()=>{ const url=$('#csvUrl').value.trim()||localStorage.getItem(LS.CSV_URL); if(!url) return setPill($('#csv-status'),'No URL','warn'); await testCSV(url); });
-  $('#btn-verify')?.addEventListener('click', verify);
+  $('#btn-verify')?.addEventListener('click', handleVerify);
 
   $('#btn-preprocess-basic')?.addEventListener('click', ()=>preprocessAll(pipeBasic));
   $('#btn-preprocess-strong')?.addEventListener('click', ()=>preprocessAll(pipeStrong));
