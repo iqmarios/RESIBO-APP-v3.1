@@ -4,11 +4,15 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Resibo App v3.6.2</title>
-  <link rel="manifest" href="manifest.json"/>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json?v=3.6.2"/>
+  <meta name="theme-color" content="#0b1220"/>
   <link rel="icon" sizes="192x192" href="icons/icon-192.png"/>
   <link rel="icon" sizes="512x512" href="icons/icon-512.png"/>
-  <meta name="theme-color" content="#0b1220"/>
-  <link rel="stylesheet" href="style.css"/>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css?v=3.6.2"/>
 </head>
 <body>
   <header class="topbar">
@@ -53,14 +57,20 @@
     <!-- Step 2 -->
     <section class="card" id="step2">
       <h2>Step 2 — Capture & OCR</h2>
-      <div class="row"><input id="file-input" type="file" accept="image/*,application/pdf" multiple/></div>
+      <div class="row">
+        <input id="file-input" type="file" accept="image/*,application/pdf" multiple/>
+      </div>
 
       <div class="row wrap gap">
         <button id="btn-preprocess-basic" class="btn">Preprocess (Basic)</button>
         <button id="btn-preprocess-strong" class="btn">Strong Preprocess (Handwriting)</button>
         <button id="btn-preprocess-ultra" class="btn">Ultra Preprocess (Tiny Print + Handwriting)</button>
 
-        <label class="check"><input id="chk-smallprint" type="checkbox" checked/><span>Boost Small Print</span></label>
+        <label class="check">
+          <input id="chk-smallprint" type="checkbox" checked/>
+          <span>Boost Small Print</span>
+        </label>
+
         <button id="btn-run-ocr" class="btn primary">Run OCR</button>
         <span id="ocr-status" class="pill">Idle</span>
       </div>
@@ -84,7 +94,7 @@
     <section class="card" id="step3">
       <h2>Step 3 — Manual Review & Edit</h2>
 
-      <!-- Viewer -->
+      <!-- Viewer & overlay controls -->
       <div id="viewer">
         <div class="viewer-toolbar">
           <div class="group">
@@ -119,11 +129,15 @@
         <span id="save-status" class="pill">Idle</span>
       </div>
 
-      <!-- Canonical form -->
+      <!-- Canonical fields -->
       <div class="grid g3">
         <div class="row"><label>Receipt Date (YYYY-MM-DD)</label><input id="f_date" placeholder="yyyy-mm-dd"/></div>
         <div class="row"><label>Document Type</label>
-          <select id="f_doc_type"><option>Sales Invoice</option><option>Official Receipt</option><option>Receipt</option></select>
+          <select id="f_doc_type">
+            <option>Sales Invoice</option>
+            <option>Official Receipt</option>
+            <option>Receipt</option>
+          </select>
         </div>
         <div class="row"><label>Document Number</label><input id="f_doc_no" placeholder="SI-0001234 / OR-0001234"/></div>
 
@@ -139,9 +153,13 @@
         <div class="row"><label>Transaction Type</label>
           <select id="f_txn_type">
             <option value="">— Select —</option>
-            <option>Cash Sales</option><option>Charge Sales</option><option>Collections</option>
-            <option>Payment to Suppliers</option><option>Disbursements</option>
-            <option>Cash Purchase</option><option>Charge Purchase</option>
+            <option>Cash Sales</option>
+            <option>Charge Sales</option>
+            <option>Collections</option>
+            <option>Payment to Suppliers</option>
+            <option>Disbursements</option>
+            <option>Cash Purchase</option>
+            <option>Charge Purchase</option>
           </select>
         </div>
         <div class="row"><label>Payment Method</label><input id="f_payment" placeholder="Cash / GCASH / Bank / Card ..."/></div>
@@ -168,7 +186,9 @@
         </div>
         <div class="table-wrap">
           <table class="items">
-            <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th></tr></thead>
+            <thead>
+              <tr><th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th></tr>
+            </thead>
             <tbody id="items-body"></tbody>
           </table>
         </div>
@@ -188,18 +208,22 @@
     </section>
   </main>
 
-  <!-- libs -->
-  <script src="libs/jszip.min.js"></script>
-  <script src="libs/FileSaver.min.js"></script>
-  <script src="libs/pdf.min.js"></script>
-  <script src="libs/pdf.worker.min.js"></script>
-  <script src="libs/tesseract.min.js"></script>
+  <!-- Core libs (cache-busted) -->
+  <script src="libs/jszip.min.js?v=3.6.2"></script>
+  <script src="libs/FileSaver.min.js?v=3.6.2"></script>
+  <script src="libs/pdf.min.js?v=3.6.2"></script>
+  <script src="libs/pdf.worker.min.js?v=3.6.2"></script>
+  <script src="libs/tesseract.min.js?v=3.6.2"></script>
 
-  <!-- app -->
-  <script src="app.js"></script>
+  <!-- App -->
+  <script src="app.js?v=3.6.2"></script>
+
+  <!-- Service Worker (cache-busted) -->
   <script>
-    if ('serviceWorker' in navigator) {
-      addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+    if ("serviceWorker" in navigator) {
+      addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js?v=3.6.2");
+      });
     }
   </script>
 </body>
