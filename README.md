@@ -1,41 +1,47 @@
-# Resibo App v3.6.1 — Visual Overlay + Tiny-Print OCR
+# Resibo App v3.6.1
 
-**Privacy-first** receipt & invoice capture. Everything runs locally in the browser:
-- Tiny-print OCR boost (upscale + CLAHE + deskew + adaptive binarization)
-- Handwriting-friendly preprocessing
-- Clickable **Visual Overlay** for line-items (click a box → focus the matching field)
-- Zoom/pan/rotate; overlay follows precisely
-- Structured export (Receipts.csv + LineItems.csv)
-- PWA offline via Service Worker
+Offline-first receipt/OR/SI capture with local OCR (Tesseract + OpenCV).  
+Includes: Ultra Preprocess (tiny print + handwriting), visual overlay for line-items, CSV/ZIP export.
 
 ## Live
-Deployed at: `https://<your-vercel-app>.vercel.app`
+Deployed on Vercel. After each deploy, force-update:
+- DevTools → **Application → Service Workers → Unregister** → **Hard Reload**, or
+- Run in Console:
+  ```js
+  navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
+  caches.keys().then(k=>k.forEach(caches.delete));
+  location.reload();
+CSV Access Control
 
-## Files
-index.html
-app.js
-style.css
-manifest.json
-sw.js
-icons/icon-192.png
-icons/icon-512.png
-libs/
-jszip.min.js
-FileSaver.min.js
-pdf.min.js
-pdf.worker.min.js
-tesseract.min.js
-opencv.js
-## Step 0 — Versioning
-- Bump versions in:
-  - `index.html` query strings (`?v=3.6.1`)
-  - `sw.js` `CACHE_VERSION`
-  - `manifest.json` `start_url`
-- Hard reload after deploy (DevTools → Application → Service Workers → **Unregister**, then refresh).
+Publish Google Sheet to web (CSV).
 
-## Step 1 — Access Verification
-1. Paste **Issued Codes CSV URL** (Google Sheet “Publish to Web” → `output=csv`).
-2. Click **Save**, then **Test CSV** (should show “CSV fetched”).
-3. Enter **Access Code / Name / TIN / Gmail** and click **Verify** → “Verification success”.
+Required headers (lowercase):
+code, name, tin, gmail, status, expiry_date
 
-CSV headers (lowercase, exact):
+status = ACTIVE, expiry_date = YYYY-MM-DD.
+
+Paste URL in Settings → Issued Codes CSV URL, click Save then Test CSV.
+Verify with Access Code/Name/TIN/Gmail.
+
+OCR Flow
+
+Upload or capture.
+
+Ultra Preprocess (Tiny Print + Handwriting) (small-font boost).
+
+Run OCR → Apply OCR → Fields.
+
+Parse Line Items (Layout) to draw overlay and populate row grid.
+
+Review/edit → Save → Export CSV/ZIP.
+---
+
+## What to do now
+
+1) Replace your files with the ones above (especially `index.html` and `sw.js`).  
+2) Open the live site → **Unregister** the service worker → **Ctrl+F5**.  
+3) **Paste the CSV URL → Save → Test CSV** (you should see **CSV fetched (N rows)**).  
+4) Fill Access Code / Name / TIN / Gmail → **Verify** (you’ll get **Verification success**).  
+
+If anything still doesn’t fire, tell me exactly which button you pressed and what (if any) pill message appears, and I’ll pinpoint it.
+::contentReference[oaicite:0]{index=0}
