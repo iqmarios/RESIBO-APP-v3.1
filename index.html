@@ -1,206 +1,231 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Resibo App v3.1.5</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <meta name="theme-color" content="#111827" />
-  <meta name="description" content="Offline-capable PWA for receipt recording & reporting with privacy-first local OCR." />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Resibo App v3.1.6 — Handwriting Build</title>
 
-  <!-- PWA manifest -->
-  <link rel="manifest" href="./manifest.json?v=3.1.5" />
+  <link rel="manifest" href="manifest.json?v=3.1.6">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-  <!-- Icons -->
-  <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
-  <link rel="apple-touch-icon" href="./icons/icon-512.png" />
+  <meta name="theme-color" content="#101827"/>
 
-  <!-- Styles -->
-  <link rel="stylesheet" href="./style.css?v=3.1.5" />
+  <link rel="stylesheet" href="style.css?v=3.1.6"/>
+
+  <!-- Libs (local) -->
+  <script defer src="libs/jszip.min.js"></script>
+  <script defer src="libs/FileSaver.min.js"></script>
+  <script defer src="libs/pdf.min.js"></script>
+  <script>
+    // pdf.js worker (local)
+    if (window['pdfjsLib']) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+    }
+  </script>
+  <script defer src="libs/tesseract.min.js"></script>
+  <script defer src="libs/opencv.js"></script>
+
+  <!-- App -->
+  <script defer src="app.js?v=3.1.6"></script>
 </head>
 <body>
-  <header class="app-header">
-    <h1>Resibo App <span class="muted">v3.1.5</span></h1>
-    <nav class="top-actions">
-      <a href="#debug" class="btn btn-ghost" id="btnOpenDebug" aria-label="Open self-test panel">Self-Test</a>
-      <a href="#settings" class="btn btn-ghost" aria-label="Open settings">Settings</a>
-      <button id="btnUpdate" class="btn btn-ghost" hidden>Update Ready</button>
-    </nav>
-  </header>
+<header>
+  <h1>Resibo App <span class="tag">v3.1.6</span></h1>
+  <p class="sub">Handwriting OCR upgrade • Offline-first • No backend required</p>
+</header>
 
-  <aside id="offlineBanner" class="offline-banner" aria-live="polite" role="status" hidden>
-    You are offline. Core features still work. Exports queue until back online.
-  </aside>
+<main>
+  <!-- Self-Test -->
+  <section class="card" id="selftest">
+    <h2>Self-Test</h2>
+    <div id="selftest-results" class="grid"></div>
+    <button id="btn-run-selftest" class="btn">Run Self-Test</button>
+  </section>
 
-  <main class="container">
-    <!-- SETTINGS (NEW) -->
-    <section class="card" id="settings" aria-labelledby="h-settings">
-      <h2 id="h-settings">Settings</h2>
-      <div class="grid grid-2">
-        <label>Issued Codes CSV URL (HTTPS)
-          <input id="setCsvUrl" placeholder="https://docs.google.com/spreadsheets/.../pub?output=csv" />
-        </label>
-        <label>Email Export Endpoint (Apps Script URL)
-          <input id="setEmailUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-        </label>
-      </div>
-      <div class="flex">
-        <button class="btn" id="btnSaveSettings" type="button">Save</button>
-        <button class="btn btn-ghost" id="btnTestCsv" type="button">Test CSV</button>
-        <button class="btn btn-ghost" id="btnTestEmail" type="button">Test Email Endpoint</button>
-        <button class="btn btn-ghost" id="btnClearSettings" type="button">Clear Settings</button>
-      </div>
-      <p id="settingsMsg" class="msg" aria-live="polite"></p>
-      <p class="note">Saved locally in your browser. The app auto-fills Step 1 using these values.</p>
-    </section>
+  <!-- Settings -->
+  <section class="card" id="settings">
+    <h2>Settings</h2>
+    <label>Issued Codes CSV URL
+      <input id="csvUrl" type="url" placeholder="https://docs.google.com/.../pub?output=csv">
+    </label>
+    <div class="row">
+      <button id="btn-save-settings" class="btn">Save</button>
+      <button id="btn-test-csv" class="btn">Test CSV</button>
+      <span id="csv-status" class="pill">Idle</span>
+    </div>
+  </section>
 
-    <!-- STEP 1: VERIFICATION -->
-    <section class="card" id="sectionVerify" aria-labelledby="h-verify">
-      <h2 id="h-verify">Step 1 — Verification & Access Control</h2>
-      <form id="verifyForm" autocomplete="off" novalidate>
-        <div class="grid grid-2">
-          <label>Access Code
-            <input id="inpAccessCode" name="access_code" required placeholder="e.g., RES-ABC-123" />
-          </label>
-          <label>Name (Registered)
-            <input id="inpName" name="name" required placeholder="Registered Name" />
-          </label>
-          <label>TIN (Seller/Buyer)
-            <input id="inpTIN" name="tin" inputmode="numeric" required placeholder="123-456-789" />
-          </label>
-          <label>Gmail
-            <input id="inpGmail" name="gmail" type="email" required placeholder="name@gmail.com" />
-          </label>
-        </div>
+  <!-- Step 1: Verify -->
+  <section class="card" id="step1">
+    <h2>Step 1 — Access Verification</h2>
+    <div class="grid-2">
+      <label>Access Code <input id="acc_code" placeholder="RES-XXXX-###"></label>
+      <label>Name <input id="acc_name" placeholder="Juan Dela Cruz"></label>
+      <label>TIN <input id="acc_tin" placeholder="123-456-789-000"></label>
+      <label>Gmail <input id="acc_gmail" placeholder="user@gmail.com" type="email"></label>
+    </div>
+    <div class="row">
+      <button id="btn-verify" class="btn primary">Verify</button>
+      <span id="verify-status" class="pill">Not verified</span>
+    </div>
+    <small>Session persists for 7 days (local only).</small>
+  </section>
 
-        <details class="dd">
-          <summary><strong>Issued Codes Source</strong> (choose one)</summary>
-          <div class="grid">
-            <label>CSV URL (HTTPS)
-              <input id="inpCsvUrl" name="csv_url" placeholder="https://docs.google.com/spreadsheets/.../pub?output=csv" />
-            </label>
-            <label>OR Paste CSV (headers: NAME,TIN,GMAIL,ACCESS_CODE,EXPIRY_DATE,STATUS)
-              <textarea id="inpCsvPaste" rows="4" placeholder="NAME,TIN,GMAIL,ACCESS_CODE,EXPIRY_DATE,STATUS&#10;Mario,123-456-789,name@gmail.com,RES-AAA,2026-12-31,ACTIVE"></textarea>
-            </label>
-          </div>
-        </details>
+  <!-- Step 2: Capture & OCR -->
+  <section class="card" id="step2">
+    <h2>Step 2 — Capture & OCR</h2>
 
-        <div class="flex">
-          <button class="btn" id="btnVerify" type="submit">Verify</button>
-          <button class="btn btn-ghost" id="btnClearVerify" type="button">Clear</button>
-        </div>
-        <p id="verifyMsg" class="msg" aria-live="assertive"></p>
-      </form>
-      <p class="note">A 7-day session is stored locally (schema-versioned). STATUS must be <code>ACTIVE</code> and EXPIRY_DATE ≥ today (Asia/Manila) with ±1 day grace.</p>
-    </section>
+    <div class="row wrap">
+      <label class="file">
+        <input id="file-input" type="file" accept="image/*,application/pdf" multiple>
+        <span>Upload Images/PDF</span>
+      </label>
+      <button id="btn-preprocess-basic" class="btn">Preprocess (Basic)</button>
+      <button id="btn-preprocess-strong" class="btn">Strong Preprocess (Handwriting)</button>
+      <button id="btn-run-ocr" class="btn primary">Run OCR</button>
+      <span id="ocr-status" class="pill">Idle</span>
+    </div>
 
-    <!-- STEP 2: CAPTURE / UPLOAD -->
-    <section class="card" id="sectionCapture" aria-labelledby="h-capture" hidden>
-      <h2 id="h-capture">Step 2 — Receipt Capture / Upload</h2>
+    <div id="thumbs" class="thumbs"></div>
+    <label class="toggle">
+      <input type="checkbox" id="toggle-before-after">
+      <span>Show “Before” image</span>
+    </label>
+  </section>
 
-      <div class="grid grid-2">
-        <fieldset>
-          <legend>Mobile Camera</legend>
-          <video id="camPreview" playsinline autoplay muted></video>
-          <div class="overlay-edges" aria-hidden="true"></div>
-          <div class="flex">
-            <button class="btn" id="btnStartCam" type="button">Start Camera</button>
-            <button class="btn" id="btnSnap" type="button" disabled>Capture</button>
-            <button class="btn btn-ghost" id="btnStopCam" type="button" disabled>Stop</button>
-          </div>
-          <canvas id="camCanvas" hidden></canvas>
-        </fieldset>
-
-        <fieldset>
-          <legend>Desktop Upload</legend>
-          <input id="fileInput" type="file" accept="image/*,application/pdf" multiple />
-          <div class="flex">
-            <button class="btn" id="btnProcess" type="button">Process Files</button>
-            <button class="btn btn-ghost" id="btnClearFiles" type="button">Clear Files</button>
-          </div>
-          <p class="note">PDF (multi-page) supported. Preprocessing: deskew (manual), grayscale, threshold, EXIF fix.</p>
-        </fieldset>
-      </div>
-
-      <div id="fileList" class="file-list" aria-live="polite"></div>
-    </section>
-
-    <!-- STEP 3: REVIEW & EDIT -->
-    <section class="card" id="sectionReview" aria-labelledby="h-review" hidden>
-      <h2 id="h-review">Step 3 — Manual Review & Edit</h2>
-      <p class="note">We only record what appears on the receipt. No computations. CSV injection is prevented automatically.</p>
-      <div id="recordsPanel"></div>
-    </section>
-
-    <!-- STEP 4: EXPORT -->
-    <section class="card" id="sectionExport" aria-labelledby="h-export" hidden>
-      <h2 id="h-export">Step 4 — Export & Transmission</h2>
-      <label class="confirm">
-        Have you corrected all receipt data?
-        <select id="inpConfirmAll">
-          <option value="">Select…</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
+  <!-- Step 3: Manual Review & Edit -->
+  <section class="card" id="step3">
+    <h2>Step 3 — Manual Review & Edit</h2>
+    <div class="grid-3">
+      <label>Receipt Date <input type="date" id="f_date"></label>
+      <label>Document Type
+        <select id="f_doc_type">
+          <option>Sales Invoice</option>
+          <option>Official Receipt</option>
+          <option>Delivery Receipt</option>
+          <option>Billing Statement</option>
+          <option>Others</option>
         </select>
       </label>
+      <label>Document Number <input id="f_doc_no" placeholder="SI-0001234"></label>
 
-      <div class="grid grid-2">
-        <fieldset>
-          <legend>Email Export (optional backend)</legend>
-          <button class="btn" id="btnEmailExport" type="button">Email data.csv + manifest.json</button>
-          <p class="note">Requires Apps Script endpoint (see Settings). Queued if offline.</p>
-        </fieldset>
-        <fieldset>
-          <legend>ZIP Export (local)</legend>
-          <button class="btn" id="btnZipExport" type="button">Download ZIP</button>
-          <p class="note">Includes images, <code>data.csv</code>, and <code>manifest.json</code>.</p>
-        </fieldset>
-      </div>
-      <p id="exportMsg" class="msg" aria-live="assertive"></p>
-    </section>
+      <label>Seller Name <input id="f_seller_name"></label>
+      <label>Seller TIN <input id="f_seller_tin"></label>
+      <label>Seller Address <input id="f_seller_addr"></label>
 
-    <!-- STEP 5: PRIVACY & CLEANUP -->
-    <section class="card" id="sectionPrivacy" aria-labelledby="h-privacy" hidden>
-      <h2 id="h-privacy">Step 5 — Privacy & Cleanup</h2>
-      <div class="flex">
-        <button class="btn btn-danger" id="btnWipeLocal" type="button">Delete Local Data</button>
-        <button class="btn btn-ghost" id="btnWipeAllButSession" type="button">Keep Session Only</button>
-      </div>
-      <p class="note">Logs are sanitized (no PII). IndexedDB & localStorage can be cleared here.</p>
-    </section>
+      <label>Buyer Name <input id="f_buyer_name"></label>
+      <label>Buyer TIN <input id="f_buyer_tin"></label>
+      <label>Buyer Address <input id="f_buyer_addr"></label>
 
-    <!-- DEBUG / SELF-TEST -->
-    <section class="card" id="debug" aria-labelledby="h-debug">
-      <h2 id="h-debug">Self-Test (404s, Cache, Versions)</h2>
-      <p class="note">Run before deploy and after updates. All items should pass.</p>
-      <div class="flex">
-        <button class="btn" id="btnRunSelfTest" type="button">Run Self-Test</button>
-        <span id="selfTestStatus" class="badge">Idle</span>
-      </div>
-      <ul id="selfTestList" class="selftest"></ul>
-    </section>
-  </main>
+      <label>Role
+        <select id="f_role">
+          <option>BUYER</option>
+          <option>SELLER</option>
+        </select>
+      </label>
+      <label>Transaction Type
+        <select id="f_txn_type">
+          <option>Cash Sales</option>
+          <option>Charge Sales</option>
+          <option>Collections</option>
+          <option>Payment to Suppliers</option>
+          <option>Disbursements</option>
+          <option>Cash Purchase</option>
+          <option>Charge Purchase</option>
+        </select>
+      </label>
+      <label>Terms (for on-account) <input id="f_terms" placeholder="30 days / COD / etc."></label>
 
-  <footer class="app-footer">
-    <small>© 2025 Resibo — Privacy-first receipt recording. All processing happens locally.</small>
-  </footer>
+      <label>Payment Method
+        <select id="f_payment">
+          <option>Cash</option>
+          <option>Bank Transfer</option>
+          <option>Card</option>
+          <option>eWallet</option>
+          <option>Check</option>
+          <option>Others</option>
+        </select>
+      </label>
+      <label>Gross Amount <input type="number" id="f_gross" step="0.01"></label>
+      <label>VAT Amount <input type="number" id="f_vat" step="0.01"></label>
 
-  <!-- Local libraries -->
-  <script src="./libs/jszip.min.js"></script>
-  <script src="./libs/FileSaver.min.js"></script>
-  <script src="./libs/pdf.min.js"></script>
-  <script src="./libs/tesseract.min.js"></script>
+      <label>Discount <input type="number" id="f_disc" step="0.01"></label>
+      <label>Total Amount Due (auto) <input type="number" id="f_total" step="0.01" readonly></label>
+      <label>Withholding Tax (optional) <input type="number" id="f_wht" step="0.01"></label>
 
-  <!-- Version object -->
-  <script>
-    window.__RESIBO__ = {
-      VERSION: '3.1.5',
-      CACHE_VERSION: 'resibo-cache-v3.1.5',
-      BUILD_TIME: new Date().toISOString()
-    };
-  </script>
+      <label>Notes (exempt/0%/senior/pwd/solo-parent/other) <input id="f_notes"></label>
+      <label>ID Number <input id="f_idno"></label>
+    </div>
 
-  <!-- Main app -->
-  <script src="./app.js?v=3.1.5"></script>
+    <!-- Line Items -->
+    <h3>Line Items</h3>
+    <table class="items" id="items-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="items-body"></tbody>
+    </table>
+    <div class="row">
+      <button id="btn-add-item" class="btn">Add Item</button>
+      <button id="btn-clear-items" class="btn">Clear Items</button>
+    </div>
+
+    <div class="row">
+      <button id="btn-apply-ocr" class="btn">Apply OCR Hints → Fields</button>
+      <button id="btn-save-record" class="btn primary">Save Record</button>
+      <span id="save-status" class="pill">Nothing saved</span>
+    </div>
+  </section>
+
+  <!-- Step 4: Export -->
+  <section class="card" id="step4">
+    <h2>Step 4 — Export</h2>
+    <div class="row wrap">
+      <button id="btn-export-csv" class="btn">Export CSV (2 sheets)</button>
+      <button id="btn-export-zip" class="btn primary">Export ZIP (images + CSV + JSON)</button>
+      <span id="export-status" class="pill">Idle</span>
+    </div>
+  </section>
+
+  <!-- Step 5: Cleanup -->
+  <section class="card" id="step5">
+    <h2>Step 5 — Cleanup</h2>
+    <div class="row">
+      <button id="btn-clear-session" class="btn">Clear Session (keep code)</button>
+      <button id="btn-full-reset" class="btn danger">Full Reset</button>
+    </div>
+  </section>
+</main>
+
+<!-- Image Viewer Modal -->
+<div id="img-modal" class="modal">
+  <div class="modal-inner">
+    <div class="modal-toolbar">
+      <button id="btn-zoom-1" class="btn">1:1</button>
+      <button id="btn-rotate" class="btn">Rotate 90°</button>
+      <label>Brightness <input type="range" min="50" max="200" value="100" id="range-bright"></label>
+      <label>Contrast <input type="range" min="50" max="200" value="100" id="range-contrast"></label>
+      <button id="btn-close-modal" class="btn danger">Close</button>
+    </div>
+    <div class="modal-body">
+      <img id="modal-img" alt="Preview">
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>All processing is done locally on your device. No accounting computations — we only record what’s on the receipt.</p>
+</footer>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js?v=3.1.6').catch(()=>{});
+    });
+  }
+</script>
 </body>
 </html>
