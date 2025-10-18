@@ -1,47 +1,46 @@
-# Resibo App v3.6.1
+# Resibo App v3.6.1 (Canvas build)
 
-Offline-first receipt/OR/SI capture with local OCR (Tesseract + OpenCV).  
-Includes: Ultra Preprocess (tiny print + handwriting), visual overlay for line-items, CSV/ZIP export.
+Privacy-first receipt capture with offline preprocess + OCR.
+This build **does not require OpenCV/WASM**. It uses a tuned Canvas pipeline for tiny-print and handwriting.
 
-## Live
-Deployed on Vercel. After each deploy, force-update:
-- DevTools → **Application → Service Workers → Unregister** → **Hard Reload**, or
-- Run in Console:
-  ```js
-  navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
-  caches.keys().then(k=>k.forEach(caches.delete));
-  location.reload();
-CSV Access Control
+## What’s inside
+- Step 1: CSV Verify (headers: `code,name,tin,gmail,status,expiry_date`)
+- Step 2: Upload/PDF/Camera + Preprocess (Basic/Strong/Ultra + Boost Small Print)
+- OCR via Tesseract (client-side)
+- Manual Review (includes **Vatable Sales** field)
+- Visual overlay + click boxes → focuses item inputs
+- Export CSV/ZIP
+- PWA offline support
 
-Publish Google Sheet to web (CSV).
+## Quick start
+1. Host on Vercel (root files).
+2. Open the app → **Settings** → paste your **Google Sheet published CSV URL**.
+3. Click **Test CSV** → should show `CSV fetched (N rows)`.
+4. Fill **Access Code + Gmail + TIN + Name** and click **Verify**.
+5. Upload an image (or PDF) → **Preprocess** (Ultra for tiny print) → **Run OCR**.
+6. Click **Apply OCR to Fields**, review, edit line items.
+7. **Save** (local) and **Export CSV/ZIP**.
 
-Required headers (lowercase):
-code, name, tin, gmail, status, expiry_date
+## Files
+/
+├─ index.html
+├─ app.js
+├─ style.css
+├─ manifest.json
+├─ sw.js
+├─ icons/
+│ ├─ icon-192.png
+│ └─ icon-512.png
+└─ libs/
+├─ jszip.min.js
+├─ FileSaver.min.js
+├─ pdf.min.js
+├─ pdf.worker.min.js
+└─ tesseract.min.js
 
-status = ACTIVE, expiry_date = YYYY-MM-DD.
+pgsql
+Copy code
 
-Paste URL in Settings → Issued Codes CSV URL, click Save then Test CSV.
-Verify with Access Code/Name/TIN/Gmail.
-
-OCR Flow
-
-Upload or capture.
-
-Ultra Preprocess (Tiny Print + Handwriting) (small-font boost).
-
-Run OCR → Apply OCR → Fields.
-
-Parse Line Items (Layout) to draw overlay and populate row grid.
-
-Review/edit → Save → Export CSV/ZIP.
----
-
-## What to do now
-
-1) Replace your files with the ones above (especially `index.html` and `sw.js`).  
-2) Open the live site → **Unregister** the service worker → **Ctrl+F5**.  
-3) **Paste the CSV URL → Save → Test CSV** (you should see **CSV fetched (N rows)**).  
-4) Fill Access Code / Name / TIN / Gmail → **Verify** (you’ll get **Verification success**).  
-
-If anything still doesn’t fire, tell me exactly which button you pressed and what (if any) pill message appears, and I’ll pinpoint it.
-::contentReference[oaicite:0]{index=0}
+## Notes
+- If later you acquire **opencv_js.wasm**, you can switch to the OpenCV build (deskew, adaptive Binarization, etc.). For now this Canvas build is tuned to handle tiny printed words and messy receipts well.
+- After any deploy, if something looks cached, open **DevTools → Application → Service Workers → Unregister**, then reload.
