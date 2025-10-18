@@ -1,130 +1,178 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>Resibo App v3.1.6 — Handwriting Build</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Resibo App v3.1.8 — Handwriting Build</title>
 
-  <link rel="manifest" href="manifest.json?v=3.1.6">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.json?v=3.1.8" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
 
-  <meta name="theme-color" content="#101827"/>
+  <link rel="stylesheet" href="style.css?v=3.1.8" />
 
-  <link rel="stylesheet" href="style.css?v=3.1.6"/>
-
-  <!-- Libs (local) -->
+  <!-- libs -->
   <script defer src="libs/jszip.min.js"></script>
   <script defer src="libs/FileSaver.min.js"></script>
   <script defer src="libs/pdf.min.js"></script>
   <script>
-    // pdf.js worker (local)
-    if (window['pdfjsLib']) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
-    }
+    // Prefer worker; fall back to no-worker if not present
+    window.addEventListener('load', async () => {
+      if (window.pdfjsLib) {
+        try {
+          const head = await fetch('libs/pdf.worker.min.js', { method:'HEAD' });
+          if (head && head.ok) pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+          else pdfjsLib.disableWorker = true;
+        } catch { pdfjsLib.disableWorker = true; }
+      }
+    });
   </script>
   <script defer src="libs/tesseract.min.js"></script>
   <script defer src="libs/opencv.js"></script>
 
-  <!-- App -->
-  <script defer src="app.js?v=3.1.6"></script>
+  <script defer src="app.js?v=3.1.8"></script>
 </head>
 <body>
-<header>
-  <h1>Resibo App <span class="tag">v3.1.6</span></h1>
-  <p class="sub">Handwriting OCR upgrade • Offline-first • No backend required</p>
+<header class="top">
+  <h1>Resibo App <span class="chip">v3.1.8</span></h1>
+  <nav class="floating">
+    <button id="btn-top" class="fab">🏠 Top</button>
+    <button id="btn-jump-step3" class="fab">⬇ Review</button>
+  </nav>
 </header>
 
-<main>
-  <!-- Self-Test -->
-  <section class="card" id="selftest">
-    <h2>Self-Test</h2>
-    <div id="selftest-results" class="grid"></div>
-    <button id="btn-run-selftest" class="btn">Run Self-Test</button>
-  </section>
-
-  <!-- Settings -->
-  <section class="card" id="settings">
+<main class="wrap">
+  <!-- SETTINGS -->
+  <section class="card">
     <h2>Settings</h2>
-    <label>Issued Codes CSV URL
-      <input id="csvUrl" type="url" placeholder="https://docs.google.com/.../pub?output=csv">
-    </label>
+    <div class="row">
+      <label>Issued Codes CSV URL (HTTPS)</label>
+      <input id="csvUrl" placeholder="https://docs.google.com/.../pub?output=csv" />
+    </div>
     <div class="row">
       <button id="btn-save-settings" class="btn">Save</button>
       <button id="btn-test-csv" class="btn">Test CSV</button>
-      <span id="csv-status" class="pill">Idle</span>
+      <span id="csv-status" class="pill">No URL</span>
     </div>
   </section>
 
-  <!-- Step 1: Verify -->
+  <!-- STEP 1 -->
   <section class="card" id="step1">
     <h2>Step 1 — Access Verification</h2>
-    <div class="grid-2">
-      <label>Access Code <input id="acc_code" placeholder="RES-XXXX-###"></label>
-      <label>Name <input id="acc_name" placeholder="Juan Dela Cruz"></label>
-      <label>TIN <input id="acc_tin" placeholder="123-456-789-000"></label>
-      <label>Gmail <input id="acc_gmail" placeholder="user@gmail.com" type="email"></label>
+    <div class="grid2">
+      <div><label>Access Code</label><input id="acc_code" value=""></div>
+      <div><label>Name</label><input id="acc_name" value=""></div>
+      <div><label>TIN</label><input id="acc_tin" value=""></div>
+      <div><label>Gmail</label><input id="acc_gmail" value=""></div>
     </div>
     <div class="row">
-      <button id="btn-verify" class="btn primary">Verify</button>
-      <span id="verify-status" class="pill">Not verified</span>
+      <button id="btn-verify" class="btn">Verify</button>
+      <span id="verify-status" class="pill"></span>
     </div>
-    <small>Session persists for 7 days (local only).</small>
   </section>
 
-  <!-- Step 2: Capture & OCR -->
+  <!-- STEP 2 -->
   <section class="card" id="step2">
     <h2>Step 2 — Capture & OCR</h2>
-
-    <div class="row wrap">
-      <label class="file">
-        <input id="file-input" type="file" accept="image/*,application/pdf" multiple>
-        <span>Upload Images/PDF</span>
-      </label>
+    <div class="row">
+      <input id="file-input" type="file" accept="image/*,application/pdf" multiple />
       <button id="btn-preprocess-basic" class="btn">Preprocess (Basic)</button>
       <button id="btn-preprocess-strong" class="btn">Strong Preprocess (Handwriting)</button>
       <button id="btn-run-ocr" class="btn primary">Run OCR</button>
       <span id="ocr-status" class="pill">Idle</span>
     </div>
 
-    <div id="thumbs" class="thumbs"></div>
     <label class="toggle">
-      <input type="checkbox" id="toggle-before-after">
+      <input id="toggle-before-after" type="checkbox">
       <span>Show “Before” image</span>
     </label>
+
+    <div id="thumbs" class="thumbs"></div>
   </section>
 
-  <!-- Step 3: Manual Review & Edit -->
+  <!-- STEP 3 -->
   <section class="card" id="step3">
     <h2>Step 3 — Manual Review & Edit</h2>
-    <div class="grid-3">
-      <label>Receipt Date <input type="date" id="f_date"></label>
-      <label>Document Type
+
+    <!-- Inline Large Viewer with Controls -->
+    <div id="viewer" class="viewer">
+      <div class="viewer-toolbar">
+        <button id="v-fit" class="btn xs">Fit</button>
+        <button id="v-1x" class="btn xs">1:1</button>
+        <button id="v-zoom-out" class="btn xs">−</button>
+        <input id="v-zoom-slider" type="range" min="30" max="600" value="100" />
+        <button id="v-zoom-in" class="btn xs">+</button>
+        <button id="v-rotate" class="btn xs">⟲ Rotate</button>
+        <label class="small">Brightness <input id="v-bright" type="range" min="50" max="200" value="100" /></label>
+        <label class="small">Contrast <input id="v-contrast" type="range" min="50" max="200" value="100" /></label>
+        <span class="muted">Drag to pan • Wheel/Pinch to zoom</span>
+      </div>
+      <div id="viewer-canvas" class="viewer-canvas">
+        <!-- two stacked images: before (base) and after (processed) -->
+        <img id="v-before" alt="">
+        <img id="v-after" alt="">
+      </div>
+      <div class="row">
+        <button id="btn-apply-ocr" class="btn">Apply OCR → Fields</button>
+        <span id="save-status" class="pill"></span>
+      </div>
+    </div>
+
+    <!-- Form (directly beneath the large image) -->
+    <div class="grid3">
+      <div>
+        <label>Receipt Date (YYYY-MM-DD)</label>
+        <input id="f_date" placeholder="2025-01-31">
+      </div>
+      <div>
+        <label>Document Type</label>
         <select id="f_doc_type">
           <option>Sales Invoice</option>
           <option>Official Receipt</option>
-          <option>Delivery Receipt</option>
-          <option>Billing Statement</option>
-          <option>Others</option>
+          <option>Receipt</option>
+          <option>Invoice</option>
         </select>
-      </label>
-      <label>Document Number <input id="f_doc_no" placeholder="SI-0001234"></label>
+      </div>
+      <div>
+        <label>Document Number</label>
+        <input id="f_doc_no" placeholder="SI-0001234">
+      </div>
 
-      <label>Seller Name <input id="f_seller_name"></label>
-      <label>Seller TIN <input id="f_seller_tin"></label>
-      <label>Seller Address <input id="f_seller_addr"></label>
+      <div>
+        <label>Seller Name</label>
+        <input id="f_seller_name">
+      </div>
+      <div>
+        <label>Seller TIN</label>
+        <input id="f_seller_tin">
+      </div>
+      <div>
+        <label>Seller Address</label>
+        <input id="f_seller_addr">
+      </div>
 
-      <label>Buyer Name <input id="f_buyer_name"></label>
-      <label>Buyer TIN <input id="f_buyer_tin"></label>
-      <label>Buyer Address <input id="f_buyer_addr"></label>
+      <div>
+        <label>Buyer Name</label>
+        <input id="f_buyer_name">
+      </div>
+      <div>
+        <label>Buyer TIN</label>
+        <input id="f_buyer_tin">
+      </div>
+      <div>
+        <label>Buyer Address</label>
+        <input id="f_buyer_addr">
+      </div>
 
-      <label>Role
+      <div>
+        <label>Role</label>
         <select id="f_role">
-          <option>BUYER</option>
-          <option>SELLER</option>
+          <option>BUYER/PAYOR</option>
+          <option>SELLER/ISSUER</option>
         </select>
-      </label>
-      <label>Transaction Type
+      </div>
+      <div>
+        <label>Transaction Type</label>
         <select id="f_txn_type">
           <option>Cash Sales</option>
           <option>Charge Sales</option>
@@ -134,33 +182,51 @@
           <option>Cash Purchase</option>
           <option>Charge Purchase</option>
         </select>
-      </label>
-      <label>Terms (for on-account) <input id="f_terms" placeholder="30 days / COD / etc."></label>
+      </div>
+      <div>
+        <label>Payment Method</label>
+        <input id="f_payment" placeholder="Cash / Transfer / Card / eWallet / Check / Others">
+      </div>
 
-      <label>Payment Method
-        <select id="f_payment">
-          <option>Cash</option>
-          <option>Bank Transfer</option>
-          <option>Card</option>
-          <option>eWallet</option>
-          <option>Check</option>
-          <option>Others</option>
-        </select>
-      </label>
-      <label>Gross Amount <input type="number" id="f_gross" step="0.01"></label>
-      <label>VAT Amount <input type="number" id="f_vat" step="0.01"></label>
+      <div>
+        <label>Gross Amount</label>
+        <input id="f_gross" type="number" step="0.01">
+      </div>
+      <div>
+        <label>VAT Amount</label>
+        <input id="f_vat" type="number" step="0.01">
+      </div>
+      <div>
+        <label>Discount</label>
+        <input id="f_disc" type="number" step="0.01">
+      </div>
 
-      <label>Discount <input type="number" id="f_disc" step="0.01"></label>
-      <label>Total Amount Due (auto) <input type="number" id="f_total" step="0.01" readonly></label>
-      <label>Withholding Tax (optional) <input type="number" id="f_wht" step="0.01"></label>
+      <div>
+        <label>Total Amount Due</label>
+        <input id="f_total" type="number" step="0.01">
+      </div>
+      <div>
+        <label>Withholding Tax (optional)</label>
+        <input id="f_wht" type="number" step="0.01">
+      </div>
+      <div>
+        <label>ID Number</label>
+        <input id="f_idno">
+      </div>
 
-      <label>Notes (exempt/0%/senior/pwd/solo-parent/other) <input id="f_notes"></label>
-      <label>ID Number <input id="f_idno"></label>
+      <div class="colspan3">
+        <label>Terms (for on-account)</label>
+        <input id="f_terms">
+      </div>
+      <div class="colspan3">
+        <label>Notes (exempt/0%/senior/pwd/solo-parent/other)</label>
+        <input id="f_notes">
+      </div>
     </div>
 
     <!-- Line Items -->
     <h3>Line Items</h3>
-    <table class="items" id="items-table">
+    <table class="items">
       <thead>
         <tr>
           <th>#</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Amount</th><th></th>
@@ -169,62 +235,52 @@
       <tbody id="items-body"></tbody>
     </table>
     <div class="row">
-      <button id="btn-add-item" class="btn">Add Item</button>
-      <button id="btn-clear-items" class="btn">Clear Items</button>
+      <button id="btn-add-item" class="btn">Add Row</button>
+      <button id="btn-clear-items" class="btn">Clear</button>
     </div>
 
     <div class="row">
-      <button id="btn-apply-ocr" class="btn">Apply OCR Hints → Fields</button>
       <button id="btn-save-record" class="btn primary">Save Record</button>
-      <span id="save-status" class="pill">Nothing saved</span>
+      <span id="export-status" class="pill"></span>
     </div>
   </section>
 
-  <!-- Step 4: Export -->
+  <!-- STEP 4 -->
   <section class="card" id="step4">
     <h2>Step 4 — Export</h2>
-    <div class="row wrap">
-      <button id="btn-export-csv" class="btn">Export CSV (2 sheets)</button>
-      <button id="btn-export-zip" class="btn primary">Export ZIP (images + CSV + JSON)</button>
-      <span id="export-status" class="pill">Idle</span>
+    <div class="row">
+      <button id="btn-export-csv" class="btn">Export CSV (2 files)</button>
+      <button id="btn-export-zip" class="btn">Export ZIP (images+CSV+JSON)</button>
     </div>
   </section>
 
-  <!-- Step 5: Cleanup -->
+  <!-- STEP 5 -->
   <section class="card" id="step5">
     <h2>Step 5 — Cleanup</h2>
     <div class="row">
-      <button id="btn-clear-session" class="btn">Clear Session (keep code)</button>
+      <button id="btn-clear-session" class="btn">Clear Session</button>
       <button id="btn-full-reset" class="btn danger">Full Reset</button>
     </div>
   </section>
+
+  <!-- Self-Test -->
+  <section class="card">
+    <h2>Self-Test</h2>
+    <div class="row">
+      <button id="btn-run-selftest" class="btn">Run Self-Test</button>
+    </div>
+    <div id="selftest-results" class="list"></div>
+  </section>
 </main>
 
-<!-- Image Viewer Modal -->
-<div id="img-modal" class="modal">
-  <div class="modal-inner">
-    <div class="modal-toolbar">
-      <button id="btn-zoom-1" class="btn">1:1</button>
-      <button id="btn-rotate" class="btn">Rotate 90°</button>
-      <label>Brightness <input type="range" min="50" max="200" value="100" id="range-bright"></label>
-      <label>Contrast <input type="range" min="50" max="200" value="100" id="range-contrast"></label>
-      <button id="btn-close-modal" class="btn danger">Close</button>
-    </div>
-    <div class="modal-body">
-      <img id="modal-img" alt="Preview">
-    </div>
-  </div>
-</div>
-
-<footer>
-  <p>All processing is done locally on your device. No accounting computations — we only record what’s on the receipt.</p>
+<footer class="foot">
+  © 2025 Resibo — Privacy-first. All processing happens locally.
 </footer>
 
 <script>
+  // Register SW (version bump)
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=3.1.6').catch(()=>{});
-    });
+    navigator.serviceWorker.register('sw.js?v=3.1.8');
   }
 </script>
 </body>
